@@ -1,6 +1,6 @@
 # amazon-exporter
 
-`amazon-exporter` is a ball of javascript to make it easier for my to do data
+`amazon-exporter` is a ball of javascript to make it easier for me to do data
 entry into a budgeting program (I use YNAB).
 
 It opens the "view invoice" link for each item in the order history, scrapes some data from the HTML, and finally opens a new window with a table summarizing every order, sorted by amount.
