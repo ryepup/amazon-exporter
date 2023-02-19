@@ -12,14 +12,18 @@
         return {card, date, amount: parseFloat(amount.replace('$', ''))}
     }
 
+    const getItems = (itemHeader) => Array.from(itemHeader.closest('tbody').querySelectorAll('td i'))
+            .map(x => x.innerText)
+    
+
     const openInvoice = async (link) => {
         const w = window.open(link.href, '_blank')
         await new Promise((resolve) => w.addEventListener('load', resolve, true))
         const headings = [...w.document.querySelectorAll('td b')]
 
-        const items = [...headings.filter(x => x.innerHTML === 'Items Ordered')[0]
-            .closest('tbody')
-            .querySelectorAll('td i')].map(x => x.innerText)
+        const items = headings.filter(x => x.innerHTML === 'Items Ordered')
+            .map(getItems)
+            .flat()
 
         const price = headings.map(x => x.innerText)
             .filter(x => x.startsWith('Order Total: $'))
