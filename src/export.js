@@ -41,7 +41,9 @@
     const priceHtml = (price) => `$${price.toFixed(2)}`
 
     const chargeHtml = (charge) => {
-        return `${charge.date} ${priceHtml(charge.amount)}`
+        return `<span class="is-size-7">
+            ${charge.date}<br>${charge.card}<br>${priceHtml(charge.amount)}
+        </span>`
     }
 
     const orderHtml = (order) => {
