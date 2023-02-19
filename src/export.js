@@ -33,13 +33,13 @@
         const charge = getCharge(cc)
         
         w.close()
-        return {items, price, charge}
+        return {items, price, charge, href: link.href}
     }
 
     const itemHtml = (item) => `<li>${item}</li>`
 
     const itemsHtml = (items) => {
-        return `<ul class="is-size-7">${items.map(itemHtml).join('')}<ul>`
+        return `<ul>${items.map(itemHtml).join('')}<ul>`
     }
 
     const priceHtml = (price) => `$${price.toFixed(2)}`
@@ -50,13 +50,19 @@
         </span>`
     }
 
+    const hrefHtml = (href) => {
+        const id = new URL(href).searchParams.get('orderID')
+        return `<a href="${href}" target="_blank">${id}</a>`
+    }
+
     const orderHtml = (order) => {
         const hasCharge = order.charge !== undefined
         const bg = hasCharge ? '' : 'has-background-danger-light'
         return `<tr class="${bg}">
+            <td>${hrefHtml(order.href)}</td>
             <td>${itemsHtml(order.items)}</td>
-            <td>${priceHtml(order.price)}</td>
             <td>${hasCharge ? chargeHtml(order.charge) : '-'}</td>
+            <td>${priceHtml(order.price)}</td>
         </tr>`
     }
 
@@ -72,11 +78,12 @@
             <body>
                 <section class="section">
                     <h1 class="title">Order Summary</h1>
-                    <table class="table">
+                    <table class="table is-striped is-fullwidth">
                         <thead>
+                            <th>Order</th>
                             <th>Items</th>
-                            <th>Price</th>
                             <th>Charge</th>
+                            <th>Price</th>
                         </thead>
                         <tbody>
                             ${orders.map(orderHtml).join('')}
