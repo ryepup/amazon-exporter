@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -82,6 +81,10 @@ func initDatabase() (*sql.DB, error) {
 		return nil, err
 	}
 
+	// prevent "database is locked (5) (SQLITE_BUSY)" errors on concurrent
+	// access
+	db.SetMaxOpenConns(1)
+
 	return db, nil
 }
 
@@ -139,16 +142,12 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
-// repository wraps our sqlite db with a lock to prevent "database is locked (5)
-// (SQLITE_BUSY)" errors
+// repository wraps our sqlite interaction
 type repository struct {
 	db *sql.DB
-	mu sync.Mutex
 }
 
 func (r *repository) HasOrder(ID string) (bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	var existingID string
 	err := r.db.QueryRow("SELECT id FROM purchases WHERE id = ?", ID).Scan(&existingID)
 	switch {
@@ -162,8 +161,6 @@ func (r *repository) HasOrder(ID string) (bool, error) {
 }
 
 func (r *repository) Save(request Order) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	tx, err := r.db.Begin()
 	if err != nil {
