@@ -55,11 +55,29 @@
         return `<a href="${href}" target="_blank">${id}</a>`
     }
 
+    const upload = async (order) => {
+        const id = new URL(order.href).searchParams.get('orderID')
+        const res = await fetch('http://localhost:8080/api/purchases', {
+            method: 'PUT',
+            mode: 'cors',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id, ...order})
+        })
+        x = {200: '✅',
+        500: '❌',
+        409: '⚠️'
+    }
+        return {
+            uploaded: x[res.status] || '?',
+            ...order
+        }
+    }
+
     const orderHtml = (order) => {
         const hasCharge = order.charge !== undefined
         const bg = hasCharge ? '' : 'has-background-danger-light'
         return `<tr class="${bg}">
-            <td>${hrefHtml(order.href)}</td>
+            <td>${hrefHtml(order.href)} (${order.uploaded})</td>
             <td>${itemsHtml(order.items)}</td>
             <td>${hasCharge ? chargeHtml(order.charge) : '-'}</td>
             <td>${priceHtml(order.price)}</td>
@@ -99,10 +117,11 @@
         orders.sort((a, b) => a.price < b.price)
         const body = URL.createObjectURL(new Blob([ordersHtml(orders)], {type: 'text/html'}))
         const w = window.open(body)
+        console.log({orders})
         nextPage()
     }
 
 
     const orders = await Promise.all(getInvoiceLinks().map(openInvoice))
-    output(orders)
+    output(await Promise.all(orders.map(upload)))
 })()

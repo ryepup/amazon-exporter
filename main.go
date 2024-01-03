@@ -3,10 +3,12 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,7 +18,7 @@ var (
 	dbFileFlag = flag.String("dbfile", "example.db", "SQLite database file")
 )
 
-type PutRequest struct {
+type Order struct {
 	ID     string   `json:"id"`
 	Href   string   `json:"href"`
 	Items  []string `json:"items"`
@@ -75,6 +77,11 @@ func initDatabase() (*sql.DB, error) {
 		return nil, err
 	}
 
+	_, err = db.Exec("PRAGMA journal_mode = WAL")
+	if err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }
 
@@ -88,15 +95,16 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	repo := repository{db: db}
 
 	// Handle PUT requests
-	http.HandleFunc("/purchase", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/purchases", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		var request PutRequest
+		var request Order
 		err := json.NewDecoder(r.Body).Decode(&request)
 		if err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -104,48 +112,22 @@ func main() {
 		}
 
 		// Check if the purchase with the given ID already exists
-		var existingID string
-		err = db.QueryRow("SELECT id FROM purchases WHERE id = ?", request.ID).Scan(&existingID)
-		if err == nil {
-			// Purchase with the same ID already exists, return 409 Conflict
-			http.Error(w, "Conflict: Purchase with the same ID already exists", http.StatusConflict)
-			return
-		} else if err != sql.ErrNoRows {
-			// Other database error
+		exists, err := repo.HasOrder(request.ID)
+		if err != nil {
 			log.Println("Error checking existing purchase:", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-
-		// Save items to the database and get their IDs
-		itemIDs := make([]int64, 0, len(request.Items))
-		for _, item := range request.Items {
-			result, err := db.Exec("INSERT INTO items (item) VALUES (?)", item)
-			if err != nil {
-				log.Println("Error inserting item:", err)
-				continue
-			}
-			itemID, _ := result.LastInsertId()
-			itemIDs = append(itemIDs, itemID)
-		}
-
-		// Save purchase information to the database
-		_, err = db.Exec(`
-			INSERT INTO purchases (id, href, price, card, amount, date)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, request.ID, request.Href, request.Price, request.Charge.Card, request.Charge.Amount, request.Charge.Date)
-		if err != nil {
-			log.Println("Error inserting purchase:", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		if exists {
+			// Purchase with the same ID already exists, return 409 Conflict
+			http.Error(w, "Conflict: Purchase with the same ID already exists", http.StatusConflict)
 			return
 		}
 
-		// Relate items to the purchase in the purchase_items table
-		for _, itemID := range itemIDs {
-			_, err := db.Exec("INSERT INTO purchase_items (purchase_id, item_id) VALUES (?, ?)", request.ID, itemID)
-			if err != nil {
-				log.Println("Error relating item to purchase:", err)
-			}
+		if err := repo.Save(request); err != nil {
+			log.Println("Error saving:", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -155,4 +137,76 @@ func main() {
 	addr := fmt.Sprintf(":%d", *portFlag)
 	log.Printf("Server is listening on %s...", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
+}
+
+// repository wraps our sqlite db with a lock to prevent "database is locked (5)
+// (SQLITE_BUSY)" errors
+type repository struct {
+	db *sql.DB
+	mu sync.Mutex
+}
+
+func (r *repository) HasOrder(ID string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var existingID string
+	err := r.db.QueryRow("SELECT id FROM purchases WHERE id = ?", ID).Scan(&existingID)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+func (r *repository) Save(request Order) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Save items to the database and get their IDs
+	itemIDs := make([]int64, 0, len(request.Items))
+	for _, item := range request.Items {
+		var existingID int64
+		err := tx.QueryRow("SELECT id FROM items WHERE item = ?", item).Scan(&existingID)
+		switch {
+		case err == nil:
+			itemIDs = append(itemIDs, existingID)
+		case errors.Is(err, sql.ErrNoRows):
+			result, err := tx.Exec("INSERT INTO items (item) VALUES (?)", item)
+			if err != nil {
+				return fmt.Errorf("item not inserted: %w", err)
+			}
+			itemID, _ := result.LastInsertId()
+			itemIDs = append(itemIDs, itemID)
+		default:
+			return err
+		}
+	}
+
+	// Save purchase information to the database
+	_, err = tx.Exec(`
+			INSERT INTO purchases (id, href, price, card, amount, date)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, request.ID, request.Href, request.Price, request.Charge.Card, request.Charge.Amount, request.Charge.Date)
+	if err != nil {
+		return fmt.Errorf("purchase not inserted: %w", err)
+	}
+
+	// Relate items to the purchase in the purchase_items table
+	for _, itemID := range itemIDs {
+		_, err := tx.Exec("INSERT INTO purchase_items (purchase_id, item_id) VALUES (?, ?)", request.ID, itemID)
+		if err != nil {
+			return fmt.Errorf("purchase item not inserted: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
