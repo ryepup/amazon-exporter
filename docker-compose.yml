@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  purchaser:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./data:/data
