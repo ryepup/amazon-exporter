@@ -168,7 +168,10 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := tmpl.ExecuteTemplate(w, "results.html", struct{ Orders []*Order }{orders}); err != nil {
+		if err := tmpl.ExecuteTemplate(w, "results.html", struct {
+			Orders []*Order
+			Q      string
+		}{orders, q}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
