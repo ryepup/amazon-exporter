@@ -10,13 +10,20 @@ RUN go mod download
 COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o app
 
-# Stage 2: Create a minimal Docker image
-FROM alpine:latest
+FROM alpine:latest as user
 
-WORKDIR /app
+RUN addgroup -g 1000 appuser \
+    && adduser -u 1000 -G appuser -SDH appuser
+
+# Stage 2: Create a minimal Docker image
+FROM scratch
+
+COPY --from=user /etc/passwd /etc/passwd
+USER appuser
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/app /app/
+WORKDIR /app
 
 # Command to run the executable
 ENTRYPOINT ["/app/app"]
