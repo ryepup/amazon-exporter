@@ -7,19 +7,22 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
+	"strconv"
 
 	_ "modernc.org/sqlite"
 )
 
-//go:embed static
-var static embed.FS
-
 var (
 	portFlag   = flag.Int("port", 8080, "Port for the HTTP server")
 	dbFileFlag = flag.String("dbfile", "example.db", "SQLite database file")
+	//go:embed static
+	static embed.FS
+	//go:embed templates/*
+	templateFS embed.FS
 )
 
 type Order struct {
@@ -111,6 +114,11 @@ func main() {
 	}
 	staticServer := http.FileServer(http.FS(staticFS))
 
+	tmpl, err := template.ParseFS(templateFS, "templates/*.html")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Handle PUT requests
 	http.HandleFunc("/api/purchases", func(w http.ResponseWriter, r *http.Request) {
 		addCors(w.Header())
@@ -153,7 +161,28 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	http.Handle("/", staticServer)
+	http.HandleFunc("/purchases", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		orders, err := repo.Search(q)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := tmpl.ExecuteTemplate(w, "results.html", struct{ Orders []*Order }{orders}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			if err := tmpl.ExecuteTemplate(w, "index.html", nil); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+		default:
+			staticServer.ServeHTTP(w, r)
+		}
+	})
 
 	// Start the server
 	addr := fmt.Sprintf(":%d", *portFlag)
@@ -225,6 +254,291 @@ func (r *repository) Save(request Order) error {
 	}
 
 	return tx.Commit()
+}
+
+func (r *repository) Search(query string) ([]*Order, error) {
+	log.Printf("Search(%v)", query)
+	if n, err := strconv.ParseFloat(query, 32); err == nil {
+		return r.loadByPriceOrAmount(n)
+	} else if n, err := strconv.ParseInt(query, 10, 32); err == nil {
+		return r.loadByPriceOrAmount(float64(n))
+	}
+	return r.loadBySearch(query)
+}
+
+func (r *repository) Load(id string) (*Order, error) {
+	// Query to fetch purchase details and associated items
+	query := `
+        SELECT
+            p.id,
+            p.href,
+            p.price,
+            p.card,
+            p.amount,
+            p.date,
+            i.item
+        FROM
+            purchases p
+            LEFT JOIN purchase_items pi ON p.id = pi.purchase_id
+            LEFT JOIN items i ON pi.item_id = i.id
+        WHERE
+            p.id = ?;
+    `
+
+	// Execute the query
+	rows, err := r.db.Query(query, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Map to store purchase details and associated items
+	purchaseData := make(map[string]interface{})
+
+	// Iterate over the rows and collect data
+	for rows.Next() {
+		var (
+			purchaseID string
+			href       string
+			price      float64
+			card       string
+			amount     float64
+			date       string
+			item       sql.NullString
+		)
+
+		if err := rows.Scan(&purchaseID, &href, &price, &card, &amount, &date, &item); err != nil {
+			return nil, err
+		}
+
+		// Add data to the map
+		if _, ok := purchaseData[purchaseID]; !ok {
+			purchaseData[purchaseID] = map[string]interface{}{
+				"id":     purchaseID,
+				"href":   href,
+				"price":  price,
+				"card":   card,
+				"amount": amount,
+				"date":   date,
+				"items":  []string{},
+			}
+		}
+
+		if item.Valid {
+			purchaseData[purchaseID].(map[string]interface{})["items"] = append(
+				purchaseData[purchaseID].(map[string]interface{})["items"].([]string),
+				item.String,
+			)
+		}
+	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Return the result
+	if data, ok := purchaseData[id]; ok {
+		return &Order{
+			ID:    data.(map[string]interface{})["id"].(string),
+			Href:  data.(map[string]interface{})["href"].(string),
+			Items: data.(map[string]interface{})["items"].([]string),
+			Price: data.(map[string]interface{})["price"].(float64),
+			Charge: struct {
+				Card   string  `json:"card"`
+				Amount float64 `json:"amount"`
+				Date   string  `json:"date"`
+			}{
+				Card:   data.(map[string]interface{})["card"].(string),
+				Amount: data.(map[string]interface{})["amount"].(float64),
+				Date:   data.(map[string]interface{})["date"].(string),
+			},
+		}, nil
+	}
+
+	return nil, errors.New("record not found")
+}
+
+// loadByPriceOrAmount retrieves orders from the database where either the price or the amount matches the given value.
+func (r *repository) loadByPriceOrAmount(value float64) ([]*Order, error) {
+	log.Printf("loadByPriceOrAmount(%v)", value)
+	// Query to fetch orders based on price or amount
+	query := `
+        SELECT
+            p.id,
+            p.href,
+            p.price,
+            p.card,
+            p.amount,
+            p.date,
+            i.item
+        FROM
+            purchases p
+            LEFT JOIN purchase_items pi ON p.id = pi.purchase_id
+            LEFT JOIN items i ON pi.item_id = i.id
+        WHERE
+            p.price BETWEEN (?-0.001) AND (?+0.001) 
+			OR p.amount BETWEEN (?-0.001) AND (?+0.001) 
+    `
+
+	// Execute the query
+	rows, err := r.db.Query(query, value, value, value, value)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Map to store order details and associated items
+	orderData := make(map[string]*Order)
+	orders := make([]*Order, 0)
+
+	// Iterate over the rows and collect data
+	for rows.Next() {
+		var (
+			orderID string
+			href    string
+			price   float64
+			card    string
+			amount  float64
+			date    string
+			item    sql.NullString
+		)
+
+		if err := rows.Scan(&orderID, &href, &price, &card, &amount, &date, &item); err != nil {
+			return nil, err
+		}
+
+		// Check if the order already exists in the map
+		if existingOrder, ok := orderData[orderID]; ok {
+			// Add the item to the existing order's items
+			if item.Valid {
+				existingOrder.Items = append(existingOrder.Items, item.String)
+			}
+		} else {
+			// Create a new order and add it to the map
+			newOrder := &Order{
+				ID:    orderID,
+				Href:  href,
+				Items: []string{},
+				Price: price,
+				Charge: struct {
+					Card   string  `json:"card"`
+					Amount float64 `json:"amount"`
+					Date   string  `json:"date"`
+				}{
+					Card:   card,
+					Amount: amount,
+					Date:   date,
+				},
+			}
+
+			// Add the item to the new order's items
+			if item.Valid {
+				newOrder.Items = append(newOrder.Items, item.String)
+			}
+
+			orderData[orderID] = newOrder
+			orders = append(orders, newOrder)
+		}
+	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
+}
+
+// loadBySearch retrieves orders from the database where the card, item, or date contains the given string.
+func (r *repository) loadBySearch(search string) ([]*Order, error) {
+	log.Printf("loadBySearch(%v)", search)
+
+	// Query to fetch orders based on card, item, or date containing the search string
+	query := `
+        SELECT
+            p.id,
+            p.href,
+            p.price,
+            p.card,
+            p.amount,
+            p.date,
+            i.item
+        FROM
+            purchases p
+            LEFT JOIN purchase_items pi ON p.id = pi.purchase_id
+            LEFT JOIN items i ON pi.item_id = i.id
+        WHERE
+            p.card LIKE ? OR i.item LIKE ? OR p.date LIKE ?;
+    `
+
+	// Execute the query
+	rows, err := r.db.Query(query, "%"+search+"%", "%"+search+"%", "%"+search+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Map to store order details and associated items
+	orderData := make(map[string]*Order)
+	orders := make([]*Order, 0)
+
+	// Iterate over the rows and collect data
+	for rows.Next() {
+		var (
+			orderID string
+			href    string
+			price   float64
+			card    string
+			amount  float64
+			date    string
+			item    sql.NullString
+		)
+
+		if err := rows.Scan(&orderID, &href, &price, &card, &amount, &date, &item); err != nil {
+			return nil, err
+		}
+
+		// Check if the order already exists in the map
+		if existingOrder, ok := orderData[orderID]; ok {
+			// Add the item to the existing order's items
+			if item.Valid {
+				existingOrder.Items = append(existingOrder.Items, item.String)
+			}
+		} else {
+			// Create a new order and add it to the map
+			newOrder := &Order{
+				ID:    orderID,
+				Href:  href,
+				Items: []string{},
+				Price: price,
+				Charge: struct {
+					Card   string  `json:"card"`
+					Amount float64 `json:"amount"`
+					Date   string  `json:"date"`
+				}{
+					Card:   card,
+					Amount: amount,
+					Date:   date,
+				},
+			}
+
+			// Add the item to the new order's items
+			if item.Valid {
+				newOrder.Items = append(newOrder.Items, item.String)
+			}
+
+			orderData[orderID] = newOrder
+			orders = append(orders, newOrder)
+		}
+	}
+
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
 }
 
 func addCors(h http.Header) {
