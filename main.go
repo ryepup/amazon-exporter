@@ -2,15 +2,20 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 
 	_ "modernc.org/sqlite"
 )
+
+//go:embed static
+var static embed.FS
 
 var (
 	portFlag   = flag.Int("port", 8080, "Port for the HTTP server")
@@ -100,9 +105,21 @@ func main() {
 	defer db.Close()
 	repo := repository{db: db}
 
+	staticFS, err := fs.Sub(static, "static")
+	if err != nil {
+		log.Fatal(err)
+	}
+	staticServer := http.FileServer(http.FS(staticFS))
+
 	// Handle PUT requests
-	http.HandleFunc("/purchases", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
+	http.HandleFunc("/api/purchases", func(w http.ResponseWriter, r *http.Request) {
+		addCors(w.Header())
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -135,6 +152,8 @@ func main() {
 
 		w.WriteHeader(http.StatusOK)
 	})
+
+	http.Handle("/", staticServer)
 
 	// Start the server
 	addr := fmt.Sprintf(":%d", *portFlag)
@@ -206,4 +225,10 @@ func (r *repository) Save(request Order) error {
 	}
 
 	return tx.Commit()
+}
+
+func addCors(h http.Header) {
+	h.Add("Access-Control-Allow-Origin", "*")
+	h.Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+	h.Add("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
 }

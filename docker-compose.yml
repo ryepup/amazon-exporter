@@ -1,17 +1,12 @@
 version: '3'
 
 services:
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./src:/app
-      - ./nginx.conf:/etc/nginx/nginx.conf
   purchaser:
     build:
       context: .
       dockerfile: Dockerfile
     command: -port 8080 -dbfile /data/purchases.db
+    ports:
+      - "8080:8080"
     volumes:
       - ./data:/data

@@ -58,7 +58,7 @@
     const upload = async (order) => {
         const id = new URL(order.href).searchParams.get('orderID')
         const res = await fetch('http://localhost:8080/api/purchases', {
-            method: 'PUT',
+            method: 'POST',
             mode: 'cors',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({id, ...order})
