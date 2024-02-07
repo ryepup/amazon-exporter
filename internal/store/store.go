@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 
 	"github.com/ryepup/amazon-exporter/internal/models"
@@ -17,44 +18,41 @@ type Store struct {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) HasOrder(ID string) (bool, error) {
-	var existingID string
-	err := s.db.QueryRow("SELECT id FROM purchases WHERE id = ?", ID).Scan(&existingID)
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.Is(err, sql.ErrNoRows):
-		return false, nil
-	default:
-		return false, err
-	}
-}
-
-func (s *Store) Save(request models.Order) error {
+func (s *Store) Save(request models.Order) (created bool, err error) {
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback()
+
+	// uniqify the items
+	slices.Sort(request.Items)
+	request.Items = slices.Compact(request.Items)
 
 	// Save items to the database and get their IDs
 	itemIDs := make([]int64, 0, len(request.Items))
 	for _, item := range request.Items {
-		var existingID int64
-		err := tx.QueryRow("SELECT id FROM items WHERE item = ?", item).Scan(&existingID)
-		switch {
-		case err == nil:
-			itemIDs = append(itemIDs, existingID)
-		case errors.Is(err, sql.ErrNoRows):
-			result, err := tx.Exec("INSERT INTO items (item) VALUES (?)", item)
-			if err != nil {
-				return fmt.Errorf("item not inserted: %w", err)
-			}
-			itemID, _ := result.LastInsertId()
-			itemIDs = append(itemIDs, itemID)
-		default:
-			return err
+		itemID, err := s.saveItem(item, tx)
+		if err != nil {
+			return false, err
+		}
+		itemIDs = append(itemIDs, itemID)
+	}
+
+	exists, err := s.hasOrder(request.ID, tx)
+	if err != nil {
+		return false, err
+	}
+	// delete any previous records
+	if exists {
+		_, err = tx.Exec("DELETE FROM purchase_items WHERE purchase_id = ?", request.ID)
+		if err != nil {
+			return false, fmt.Errorf("existing purchase_items not deleted: %w", err)
+		}
+		_, err = tx.Exec("DELETE FROM purchases WHERE id = ?", request.ID)
+		if err != nil {
+			return false, fmt.Errorf("existing purchase not deleted: %w", err)
 		}
 	}
 
@@ -64,18 +62,49 @@ func (s *Store) Save(request models.Order) error {
 			VALUES (?, ?, ?, ?, ?, ?)
 		`, request.ID, request.Href, request.Price, request.Charge.Card, request.Charge.Amount, request.Charge.Date)
 	if err != nil {
-		return fmt.Errorf("purchase not inserted: %w", err)
+		return false, fmt.Errorf("purchase not inserted: %w", err)
 	}
 
 	// Relate items to the purchase in the purchase_items table
 	for _, itemID := range itemIDs {
 		_, err := tx.Exec("INSERT INTO purchase_items (purchase_id, item_id) VALUES (?, ?)", request.ID, itemID)
 		if err != nil {
-			return fmt.Errorf("purchase item not inserted: %w", err)
+			return false, fmt.Errorf("purchase item not inserted: %w", err)
 		}
 	}
 
-	return tx.Commit()
+	return !exists, tx.Commit()
+}
+
+func (s *Store) saveItem(item string, tx *sql.Tx) (int64, error) {
+	var existingID int64
+	err := tx.QueryRow("SELECT id FROM items WHERE item = ?", item).Scan(&existingID)
+	switch {
+	case err == nil:
+		return existingID, nil
+	case errors.Is(err, sql.ErrNoRows):
+		result, err := tx.Exec("INSERT INTO items (item) VALUES (?)", item)
+		if err != nil {
+			return 0, fmt.Errorf("item not inserted: %w", err)
+		}
+		itemID, _ := result.LastInsertId()
+		return itemID, nil
+	default:
+		return 0, err
+	}
+}
+
+func (s *Store) hasOrder(ID string, tx *sql.Tx) (bool, error) {
+	var existingID string
+	err := tx.QueryRow("SELECT id FROM purchases WHERE id = ?", ID).Scan(&existingID)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func (s *Store) Search(query string) ([]models.Order, error) {
@@ -139,7 +168,7 @@ func (s *Store) loadByPriceOrAmount(value float64) ([]models.Order, error) {
             LEFT JOIN items i ON pi.item_id = i.id
         WHERE
             p.price BETWEEN (?-0.001) AND (?+0.001) 
-			OR p.amount BETWEEN (?-0.001) AND (?+0.001) 
+			OR p.amount BETWEEN (?-0.001) AND (?+0.001)
     `
 
 	// Execute the query
@@ -239,6 +268,9 @@ func (s *Store) rowsToOrders(rows *sql.Rows) ([]models.Order, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-
+	slices.SortFunc(orders, func(a, b models.Order) int {
+		// sort DESC
+		return b.Charge.CmpTime(a.Charge)
+	})
 	return orders, nil
 }

@@ -38,18 +38,19 @@
 
     const upload = async (order) => {
         const id = new URL(order.href).searchParams.get('orderID')
-        const res = await fetch('http://localhost:8080/api/purchases', {
-            method: 'POST',
+        const res = await fetch('http://localhost:8080/api/purchases/' + id, {
+            method: 'PUT',
             mode: 'cors',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({id, ...order})
         })
         x = {
-            200: '✅',
-            500: '❌',
-            409: '⚠️'
+            200: '👷',
+            201: '👶',
+            500: '🧟',
+            409: '🙅'
         }
-        return x[res.status] || '?'
+        return x[res.status] || '🤷'
     }
 
     const orders = await Promise.all(getInvoiceLinks().map(openInvoice))

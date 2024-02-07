@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -10,6 +9,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/ryepup/amazon-exporter/internal/api"
 	"github.com/ryepup/amazon-exporter/internal/models"
 	"github.com/ryepup/amazon-exporter/internal/store"
 	_ "modernc.org/sqlite"
@@ -46,49 +46,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Handle PUT requests
-	http.HandleFunc("/api/purchases", func(w http.ResponseWriter, r *http.Request) {
-		addCors(w.Header())
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+	mux := http.NewServeMux()
+	mux.Handle("/api/", http.StripPrefix("/api", api.New(repo)))
 
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
+	// TODO: move code into more packages:
+	// - internal/ui - rendering templates for the frontend
 
-		var request models.Order
-		err := json.NewDecoder(r.Body).Decode(&request)
-		if err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
-
-		// Check if the purchase with the given ID already exists
-		exists, err := repo.HasOrder(request.ID)
-		if err != nil {
-			log.Println("Error checking existing purchase:", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		if exists {
-			// Purchase with the same ID already exists, return 409 Conflict
-			http.Error(w, "Conflict: Purchase with the same ID already exists", http.StatusConflict)
-			return
-		}
-
-		if err := repo.Save(request); err != nil {
-			log.Println("Error saving:", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	})
-
-	http.HandleFunc("/purchases", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/purchases", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		orders, err := repo.Search(q)
 		if err != nil {
@@ -103,7 +67,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/":
 			if err := tmpl.ExecuteTemplate(w, "index.html", nil); err != nil {
@@ -117,11 +81,12 @@ func main() {
 	// Start the server
 	addr := fmt.Sprintf(":%d", *portFlag)
 	log.Printf("Server is listening on %s...", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Fatal(http.ListenAndServe(addr, withLog(mux)))
 }
 
-func addCors(h http.Header) {
-	h.Add("Access-Control-Allow-Origin", "*")
-	h.Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	h.Add("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+func withLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		log.Printf("http %s %s", r.Method, r.URL.Path)
+	})
 }
