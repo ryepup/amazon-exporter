@@ -34,7 +34,9 @@
                         <p class="help">search for amounts or names of items</p>
                     </div>
                 </form>
-                <div id="search-results"></div>
+                <div id="search-results">
+                    {{ if . }}{{ template "results.html" . }}{{end}}
+                </div>
             </div>
         </section>
     </body>

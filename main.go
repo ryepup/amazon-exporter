@@ -70,7 +70,20 @@ func main() {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/":
-			if err := tmpl.ExecuteTemplate(w, "index.html", nil); err != nil {
+			var templateData any
+			q := r.URL.Query().Get("q")
+			if q != "" {
+				orders, err := repo.Search(q)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				templateData = struct {
+					Orders []models.Order
+					Q      string
+				}{orders, q}
+			}
+			if err := tmpl.ExecuteTemplate(w, "index.html", templateData); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		default:
