@@ -215,8 +215,7 @@ func (s *Store) loadBySearch(search string) ([]models.Order, error) {
 
 func (s *Store) rowsToOrders(rows *sql.Rows) ([]models.Order, error) {
 	// Map to store order details and associated items
-	orderData := make(map[string]models.Order)
-	orders := make([]models.Order, 0)
+	orderData := make(map[string]*models.Order)
 
 	// Iterate over the rows and collect data
 	for rows.Next() {
@@ -259,8 +258,7 @@ func (s *Store) rowsToOrders(rows *sql.Rows) ([]models.Order, error) {
 				newOrder.Items = append(newOrder.Items, item.String)
 			}
 
-			orderData[orderID] = newOrder
-			orders = append(orders, newOrder)
+			orderData[orderID] = &newOrder
 		}
 	}
 
@@ -268,6 +266,12 @@ func (s *Store) rowsToOrders(rows *sql.Rows) ([]models.Order, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	orders := make([]models.Order, 0, len(orderData))
+	for _, order := range orderData {
+		orders = append(orders, *order)
+	}
+
 	slices.SortFunc(orders, func(a, b models.Order) int {
 		// sort DESC
 		return b.Charge.CmpTime(a.Charge)
