@@ -1,0 +1,55 @@
+{{ $categories := .Categories}}
+<h2>{{ len .Transactions }} Unapproved Transactions</h2>
+<form method="post">
+    <table class="table is-striped is-fullwidth">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Payee</th>
+                <th>Amount</th>
+                <th>Category</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ range .Transactions }}
+            <input type="hidden" name="transactionID" value="{{.ID}}" />
+            <tr title="{{.ID}}">
+                <td rowspan="2">{{ .Date }}</td>
+                <td>{{ .Payee }}</td>
+                <td>{{ .Amount | printf "$%.2f" }}</td>
+                <td>
+                    <div class="select">
+                        <select name="categoryID">
+                            <option value="-1">-- ignore --</option>
+                            {{ range $key, $value := $categories }}
+                            <optgroup label="{{ $key }}">
+                                {{ range $value }}
+                                <option value="{{ .ID }}">{{ .Name }}</option>
+                                {{ end }}
+                            </optgroup>
+                            {{ end }}
+                        </select>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="3">
+                    <div class="table-container">
+                        <!-- TODO: this is ugly -->
+                        {{ template "order-table.html" .Orders}}
+                    </div>
+                </td>
+            </tr>
+            {{ else }}
+            <tr>
+                <td colspan="4">No unapproved transactions!</td>
+            </tr>
+            {{ end }}
+        </tbody>
+    </table>
+    <div class="field">
+        <div class="control">
+            <button class="button" type="submit">Save</button>
+        </div>
+    </div>
+</form>

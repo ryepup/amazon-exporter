@@ -7,6 +7,7 @@
         if (cc.length === 0) {
             return undefined
         }
+        // TODO: model orders with more than one charge
         const charge = cc[0].closest('tr').querySelector('td:nth-child(2)').innerText
         const [card, date, amount] = charge.split(':').map(x => x.trim())
         return {card, date, amount: parseFloat(amount.replace('$', ''))}

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -107,14 +108,14 @@ func (s *Store) hasOrder(ID string, tx *sql.Tx) (bool, error) {
 	}
 }
 
-func (s *Store) Search(query string) ([]models.Order, error) {
+func (s *Store) Search(ctx context.Context, query string) ([]models.Order, error) {
 	log.Printf("Search(%v)", query)
 	if n, err := strconv.ParseFloat(query, 32); err == nil {
-		return s.loadByPriceOrAmount(n)
+		return s.loadByPriceOrAmount(ctx, n)
 	} else if n, err := strconv.ParseInt(query, 10, 32); err == nil {
-		return s.loadByPriceOrAmount(float64(n))
+		return s.loadByPriceOrAmount(ctx, float64(n))
 	}
-	return s.loadBySearch(query)
+	return s.loadBySearch(ctx, query)
 }
 
 func (s *Store) Load(id string) (models.Order, error) {
@@ -150,7 +151,7 @@ func (s *Store) Load(id string) (models.Order, error) {
 }
 
 // loadByPriceOrAmount retrieves orders from the database where either the price or the amount matches the given value.
-func (s *Store) loadByPriceOrAmount(value float64) ([]models.Order, error) {
+func (s *Store) loadByPriceOrAmount(ctx context.Context, value float64) ([]models.Order, error) {
 	log.Printf("loadByPriceOrAmount(%v)", value)
 	// Query to fetch orders based on price or amount
 	query := `
@@ -172,7 +173,7 @@ func (s *Store) loadByPriceOrAmount(value float64) ([]models.Order, error) {
     `
 
 	// Execute the query
-	rows, err := s.db.Query(query, value, value, value, value)
+	rows, err := s.db.QueryContext(ctx, query, value, value, value, value)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +183,7 @@ func (s *Store) loadByPriceOrAmount(value float64) ([]models.Order, error) {
 }
 
 // loadBySearch retrieves orders from the database where the card, item, or date contains the given string.
-func (s *Store) loadBySearch(search string) ([]models.Order, error) {
+func (s *Store) loadBySearch(ctx context.Context, search string) ([]models.Order, error) {
 	log.Printf("loadBySearch(%v)", search)
 
 	// Query to fetch orders based on card, item, or date containing the search string
@@ -204,7 +205,7 @@ func (s *Store) loadBySearch(search string) ([]models.Order, error) {
     `
 
 	// Execute the query
-	rows, err := s.db.Query(query, "%"+search+"%", "%"+search+"%", "%"+search+"%")
+	rows, err := s.db.QueryContext(ctx, query, "%"+search+"%", "%"+search+"%", "%"+search+"%")
 	if err != nil {
 		return nil, err
 	}

@@ -28,3 +28,23 @@ type Order struct {
 	Price  float64  `json:"price"`
 	Charge Charge   `json:"charge"`
 }
+
+type TransactionID string
+
+func (t TransactionID) String() string { return string(t) }
+
+type CategoryID string
+
+func (c CategoryID) String() string { return string(c) }
+
+type UnapprovedTransaction struct {
+	ID     TransactionID
+	Amount float64
+	Date   string
+	Payee  string
+}
+
+type Category struct {
+	ID   CategoryID
+	Name string
+}
