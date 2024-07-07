@@ -18,7 +18,6 @@ var (
 	portFlag   = flag.Int("port", 8080, "Port for the HTTP server")
 	dbFileFlag = flag.String("dbfile", "example.db", "SQLite database file")
 	ynabToken  = flag.String("ynab-token", os.Getenv("YNAB_TOKEN"), "YNAB access token, can specify with YNAB_TOKEN")
-	ynabBudget = flag.String("ynab-budget", "", "YNAB budget ID") // TODO: make this selectable on the UI
 	ynabServer = flag.String("ynab-server", "https://api.ynab.com/v1/", "YNAB api server")
 )
 
@@ -34,9 +33,8 @@ func main() {
 	defer repo.Close()
 
 	ynabRepo, err := ynab.New(ynab.Config{
-		Token:    *ynabToken,
-		Server:   *ynabServer,
-		BudgetID: *ynabBudget,
+		Token:  *ynabToken,
+		Server: *ynabServer,
 	})
 	if err != nil {
 		log.Fatal(err)

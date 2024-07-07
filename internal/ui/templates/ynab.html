@@ -1,7 +1,37 @@
 {{ $categories := .Categories}}
-<h2>{{ len .Transactions }} Unapproved Transactions</h2>
+<div class="columns">
+    <div class="column">
+        <h2>{{ len .Transactions }} Unapproved Transactions</h2>
+    </div>
+    <div class="column">
+        <form>
+            <div class="select">
+                <select name="budgetID" onchange="this.form.submit()">
+                    {{ range .Budgets }}
+                    <option
+                        value="{{.ID}}"
+                        {{
+                        if
+                        eq
+                        .ID
+                        $.BudgetID
+                        }}selected="selected"
+                        {{
+                        end
+                        }}
+                    >
+                        {{.Name}} ({{ template "date.html" .LastModified }})
+                    </option>
+                    {{ end }}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
 <form method="post">
-    <table class="table is-striped is-fullwidth">
+    <input type="hidden" name="budgetID" value="{{ .BudgetID }}" />
+    <table class="table is-fullwidth">
         <thead>
             <tr>
                 <th>Date</th>
@@ -14,9 +44,9 @@
             {{ range .Transactions }}
             <input type="hidden" name="transactionID" value="{{.ID}}" />
             <tr title="{{.ID}}">
-                <td rowspan="2">{{ .Date }}</td>
+                <td>{{ template "date.html" .Date }}</td>
                 <td>{{ .Payee }}</td>
-                <td>{{ .Amount | printf "$%.2f" }}</td>
+                <td>{{ template "amount.html" .Amount }}</td>
                 <td>
                     <div class="select">
                         <select name="categoryID">
@@ -32,15 +62,21 @@
                     </div>
                 </td>
             </tr>
-            <tr>
-                <td colspan="3">
-                    <div class="table-container">
-                        <!-- TODO: this is ugly -->
-                        {{ template "order-table.html" .Orders}}
-                    </div>
+            {{ range .Orders }}
+            <tr class="has-text-weight-light">
+                <td></td>
+                <td>
+                    <a href="{{ .Href }}" target="_blank"> {{ .ID }}</a>
+                    {{ template "item-list.html" .Items}}
+                </td>
+                <td>{{ template "amount.html" .Price }}</td>
+                <td>
+                    {{ .Charge.Date }}<br />
+                    {{ .Charge.Card }}<br />
+                    {{ template "amount.html" .Charge.Amount }}
                 </td>
             </tr>
-            {{ else }}
+            {{ end }} {{ else }}
             <tr>
                 <td colspan="4">No unapproved transactions!</td>
             </tr>
@@ -49,7 +85,9 @@
     </table>
     <div class="field">
         <div class="control">
-            <button class="button" type="submit">Save</button>
+            <button class="button is-primary is-fullwidth" type="submit">
+                Save
+            </button>
         </div>
     </div>
 </form>

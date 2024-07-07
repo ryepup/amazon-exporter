@@ -9,6 +9,8 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/ryepup/amazon-exporter/internal/models"
 )
@@ -25,9 +27,10 @@ type Repo interface {
 }
 
 type YNAB interface {
-	Unapproved(context.Context) ([]models.UnapprovedTransaction, error)
-	Categories(context.Context) (map[string][]models.Category, error)
-	Approve(context.Context, map[models.TransactionID]models.CategoryID) error
+	Unapproved(context.Context, models.BudgetID) ([]models.UnapprovedTransaction, error)
+	Categories(context.Context, models.BudgetID) (map[string][]models.Category, error)
+	Approve(context.Context, models.BudgetID, map[models.TransactionID]models.CategoryID) error
+	Budgets(ctx context.Context) ([]models.Budget, error)
 }
 
 type UI struct {
@@ -111,6 +114,27 @@ func (u *UI) results(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
+
+	budgets, err := u.ynabRepo.Budgets(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var budgetID models.BudgetID
+
+	if len(budgets) > 0 {
+		budgetID = budgets[0].ID
+	}
+
+	if bID := r.URL.Query().Get("budgetID"); bID != "" {
+		budgetID = models.BudgetID(bID)
+	}
+
+	if budgetID == models.BudgetID("") {
+		http.Error(w, "could not find budget ID", http.StatusInternalServerError)
+		return
+	}
+
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -125,22 +149,24 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 			updates[models.TransactionID(tID)] = models.CategoryID(cID)
 		}
 
-		if err := u.ynabRepo.Approve(r.Context(), updates); err != nil {
+		if err := u.ynabRepo.Approve(r.Context(), budgetID, updates); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		http.Redirect(w, r, r.URL.Path, http.StatusFound)
+		r.URL.RawQuery = url.Values{"budgetID": []string{budgetID.String()}}.Encode()
+
+		http.Redirect(w, r, r.URL.String(), http.StatusFound)
 		return
 	}
 
-	cats, err := u.ynabRepo.Categories(r.Context())
+	cats, err := u.ynabRepo.Categories(r.Context(), budgetID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	trans, err := u.ynabRepo.Unapproved(r.Context())
+	trans, err := u.ynabRepo.Unapproved(r.Context(), budgetID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -154,9 +180,13 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 	templateData := struct {
 		Transactions []unapproved
 		Categories   map[string][]models.Category
+		Budgets      []models.Budget
+		BudgetID     models.BudgetID
 	}{
 		Categories:   cats,
 		Transactions: make([]unapproved, 0, len(trans)),
+		Budgets:      budgets,
+		BudgetID:     budgetID,
 	}
 	for _, ut := range trans {
 		ut := ut
@@ -165,11 +195,22 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// TODO: filter orders to be near to ut.Date
-		templateData.Transactions = append(templateData.Transactions, unapproved{
+		u := unapproved{
 			UnapprovedTransaction: ut,
-			Orders:                orders,
-		})
+		}
+		for _, o := range orders {
+			t, err := o.Charge.Time()
+			if err != nil {
+				log.Printf("ignoring order %s, bad date %s", o.ID, o.Charge.Date)
+				continue
+			}
+			diff := ut.Date.Sub(t).Abs()
+			if diff < 72*time.Hour {
+				u.Orders = append(u.Orders, o)
+			}
+		}
+
+		templateData.Transactions = append(templateData.Transactions, u)
 	}
 	u.renderPage(w, "ynab.html", templateData)
 }

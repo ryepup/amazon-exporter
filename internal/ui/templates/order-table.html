@@ -6,33 +6,29 @@
         <th>Price</th>
     </thead>
     <tbody>
-        {{ range . }}         
+        {{ range . }}
         <tr>
             <td>
-                <a href="{{ .Href }}" target="_blank">
-                    {{ .ID }}
-                </a>
+                <a href="{{ .Href }}" target="_blank"> {{ .ID }} </a>
             </td>
             <td>
-                <ul>
-                    {{ range .Items}}
-                        <li>{{ . }}</li>
-                    {{ end }}
-                </ul>
+                {{ template "item-list.html" .Items}}
             </td>
             <td>
                 {{ if ne .Charge.Card "" }}
                 <span class="is-size-7">
-                    {{ .Charge.Date }}<br>
-                    {{ .Charge.Card }}<br>
-                    {{ .Charge.Amount | printf "$%.2f"}}
+                    {{ .Charge.Date }}<br />
+                    {{ .Charge.Card }}<br />
+                    {{ template "amount.html" .Charge.Amount }}
                 </span>
                 {{ end }}
             </td>
-            <td>{{ .Price | printf "$%.2f" }}</td>
+            <td>{{ template "amount.html" .Price }}</td>
         </tr>
         {{ else }}
-        <tr><td colspan="4">No results</td></tr>
+        <tr>
+            <td colspan="4">No results</td>
+        </tr>
         {{ end }}
     </tbody>
 </table>

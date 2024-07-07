@@ -37,14 +37,24 @@ type CategoryID string
 
 func (c CategoryID) String() string { return string(c) }
 
+type BudgetID string
+
+func (b BudgetID) String() string { return string(b) }
+
 type UnapprovedTransaction struct {
 	ID     TransactionID
 	Amount float64
-	Date   string
+	Date   time.Time
 	Payee  string
 }
 
 type Category struct {
 	ID   CategoryID
 	Name string
+}
+
+type Budget struct {
+	ID           BudgetID
+	Name         string
+	LastModified time.Time
 }

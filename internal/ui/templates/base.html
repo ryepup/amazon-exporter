@@ -22,7 +22,19 @@
     <body class="content">
         <section class="section">
             <div class="container is-fluid">
+                <div class="tabs is-fullwidth">
+                    <ul>
+                        <li><a href="/">Amazon Purchases</a></li>
+                        <li><a href="/ynab">YNAB matcher</a></li>
+                    </ul>
+                </div>
                 {{block "content" .}}TODO{{end}}
+            </div>
         </section>
+        <script type="text/javascript">
+            document
+                .querySelector(`.tabs a[href="${window.location.pathname}"]`)
+                .parentElement.classList.add("is-active");
+        </script>
     </body>
 </html>

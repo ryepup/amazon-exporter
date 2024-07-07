@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/ryepup/amazon-exporter/internal/models"
@@ -21,13 +22,13 @@ func WithAuthorization(token string) ClientOption {
 }
 
 type Config struct {
-	Token, Server, BudgetID string
+	Token, Server string
 }
 
 type YNAB struct {
 	client     *ClientWithResponses
-	budgetID   string
-	categories map[string][]models.Category // cache the categories
+	categories map[models.BudgetID]map[string][]models.Category // cache the categories
+	budgets    []models.Budget                                  // cache the budgets
 }
 
 func New(cfg Config) (*YNAB, error) {
@@ -41,13 +42,12 @@ func New(cfg Config) (*YNAB, error) {
 	}
 
 	return &YNAB{
-		client:   c,
-		budgetID: cfg.BudgetID,
+		client: c,
 	}, nil
 }
 
-func (y *YNAB) Unapproved(ctx context.Context) (ret []models.UnapprovedTransaction, err error) {
-	res, err := y.client.GetTransactionsWithResponse(ctx, y.budgetID, &GetTransactionsParams{
+func (y *YNAB) Unapproved(ctx context.Context, budgetID models.BudgetID) (ret []models.UnapprovedTransaction, err error) {
+	res, err := y.client.GetTransactionsWithResponse(ctx, budgetID.String(), &GetTransactionsParams{
 		Type: ptr(GetTransactionsParamsTypeUnapproved),
 	})
 	if err != nil {
@@ -61,18 +61,18 @@ func (y *YNAB) Unapproved(ctx context.Context) (ret []models.UnapprovedTransacti
 		ret = append(ret, models.UnapprovedTransaction{
 			ID:     models.TransactionID(td.Id),
 			Amount: float64(td.Amount) / 1000,
-			Date:   td.Date.String(),
+			Date:   td.Date.Time,
 			Payee:  first(td.ImportPayeeName, td.ImportPayeeNameOriginal, td.PayeeName),
 		})
 	}
 	return ret, nil
 }
 
-func (y *YNAB) Categories(ctx context.Context) (map[string][]models.Category, error) {
-	if y.categories != nil {
-		return y.categories, nil
+func (y *YNAB) Categories(ctx context.Context, budgetID models.BudgetID) (map[string][]models.Category, error) {
+	if y.categories != nil && y.categories[budgetID] != nil {
+		return y.categories[budgetID], nil
 	}
-	res, err := y.client.GetCategoriesWithResponse(ctx, y.budgetID, nil)
+	res, err := y.client.GetCategoriesWithResponse(ctx, budgetID.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,11 @@ func (y *YNAB) Categories(ctx context.Context) (map[string][]models.Category, er
 		return nil, fmt.Errorf("could not get categories: %d", res.StatusCode())
 	}
 
-	y.categories = make(map[string][]models.Category)
+	if y.categories == nil {
+		y.categories = make(map[models.BudgetID]map[string][]models.Category)
+	}
+	y.categories[budgetID] = make(map[string][]models.Category)
+
 	for _, cgwc := range res.JSON200.Data.CategoryGroups {
 		if cgwc.Deleted || cgwc.Hidden {
 			continue
@@ -97,13 +101,13 @@ func (y *YNAB) Categories(ctx context.Context) (map[string][]models.Category, er
 			})
 		}
 		if len(items) > 0 {
-			y.categories[cgwc.Name] = items
+			y.categories[budgetID][cgwc.Name] = items
 		}
 	}
-	return y.categories, nil
+	return y.categories[budgetID], nil
 }
 
-func (y *YNAB) Approve(ctx context.Context, items map[models.TransactionID]models.CategoryID) error {
+func (y *YNAB) Approve(ctx context.Context, budgetID models.BudgetID, items map[models.TransactionID]models.CategoryID) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -121,15 +125,52 @@ func (y *YNAB) Approve(ctx context.Context, items map[models.TransactionID]model
 		})
 	}
 
-	res, err := y.client.UpdateTransactionsWithResponse(ctx, y.budgetID, updates)
+	res, err := y.client.UpdateTransactionsWithResponse(ctx, budgetID.String(), updates)
 	if err != nil {
 		return err
 	}
 	if res.StatusCode() != http.StatusOK {
-		return fmt.Errorf("could not get update: %d", res.StatusCode())
+		return fmt.Errorf("could not update: %d", res.StatusCode())
 	}
 
 	return nil
+}
+
+func (y *YNAB) Budgets(ctx context.Context) ([]models.Budget, error) {
+	if len(y.budgets) > 0 {
+		return y.budgets, nil
+	}
+
+	res, err := y.client.GetBudgetsWithResponse(ctx, &GetBudgetsParams{})
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("could not get budgets: %d", res.StatusCode())
+	}
+
+	log.Printf("bodgets: %v", res.JSON200.Data.Budgets)
+	for _, b := range res.JSON200.Data.Budgets {
+		if b.LastModifiedOn == nil {
+			continue
+		}
+		y.budgets = append(y.budgets, models.Budget{
+			ID:           models.BudgetID(b.Id.String()),
+			Name:         b.Name,
+			LastModified: *b.LastModifiedOn,
+		})
+	}
+	slices.SortFunc(y.budgets, func(a, b models.Budget) int {
+		switch {
+		case a.LastModified.Equal(b.LastModified):
+			return 0
+		case a.LastModified.Before(b.LastModified):
+			return 1
+		default:
+			return -1
+		}
+	})
+	return y.budgets, nil
 }
 
 func ptr[T any](val T) *T { return &val }

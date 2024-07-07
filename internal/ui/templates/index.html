@@ -1,24 +1,42 @@
-<div class="grid">
-    <div class="cell">
-        <form>
-            <div class="field">
-                <label class="label">Search</label>
-                <div class="control">
-                    <input
-                        type="text"
-                        name="q"
-                        class="input is-rounded"
-                        hx-get="/purchases"
-                        hx-trigger="keyup changed delay:500ms"
-                        hx-target="#search-results"
-                        placeholder="Search..."
-                        autofocus
-                    />
-                </div>
-                <p class="help">search for amounts or names of items</p>
-            </div>
-        </form>
+<form>
+    <div class="field">
+        <label class="label">Search</label>
+        <div class="control">
+            <input
+                type="text"
+                name="q"
+                class="input is-rounded"
+                hx-get="/purchases"
+                hx-trigger="keyup changed delay:500ms"
+                hx-target="#search-results"
+                placeholder="Search..."
+                autofocus
+            />
+        </div>
+        <p class="help">search for amounts or names of items</p>
     </div>
-    <div class="cell">[TODO: YNAB BUDGET PICKER]</div>
+</form>
+<div>
+    <ol>
+        <li>
+            Drag this bookmarklet to your toolbar:
+            <a
+                href="javascript:(function(){var jsCode =
+            document.createElement('script');jsCode.setAttribute('src',
+            'http://localhost:8080/export.js');document.body.appendChild(jsCode);}());"
+                >scrape orders</a
+            >
+        </li>
+        <li>
+            Open your
+            <a
+                href="https://www.amazon.com/gp/css/order-history"
+                target="_blank"
+                >Amazon Order History</a
+            >
+        </li>
+        <li>keep running the bookmarklet until you've imported all orders</li>
+    </ol>
 </div>
-<div id="search-results">{{ if . }}{{ template "results.html" . }}{{end}}</div>
+
+<div id="search-results">{{ if .Q }}{{ template "results.html" . }}{{end}}</div>
