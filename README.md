@@ -1,22 +1,27 @@
 # amazon-exporter
 
 `amazon-exporter` is a ball of javascript to make it easier for me to do data
-entry into a budgeting program (I use YNAB).
+entry into YNAB.
 
 It opens the "view invoice" link for each item in the order history, scrapes some data from the HTML, and finally opens a new window with a table summarizing every order, sorted by amount.
+
+It integrates with the [YNAB API](https://api.ynab.com/) to match up amazon
+purchases with unapproved transactions.
 
 ## Usage
 
 1. install `docker` and `make`
-2. setup a bookmarklet with this link:
-
-        javascript:(function(){var jsCode = document.createElement('script');jsCode.setAttribute('src', 'http://localhost:8080/export.js');document.body.appendChild(jsCode);}());
-
+2. (optional) create a [YNAB Personal Access Token](https://api.ynab.com/#personal-access-tokens), and put in into a `.env` file as `YNAB_TOKEN=$YOUR_TOKEN`
 3. run `make serve`
-4. open the <https://www.amazon.com/your-orders>
-5. run the bookmarklet
+4. open <http://localhost:8080> and follow the instructions
 
 ## Project goals
 
-1. vanilla js
-2. no frontend build step (using libs from CDNs is OK)
+1. make my personal budgeting chores faster
+2. vanilla js, no frontend build step (using libs from CDNs is OK)
+3. easy installation
+
+## See also
+
+- <https://bulma.io/documentation/>
+- <https://api.ynab.com/>

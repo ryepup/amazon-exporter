@@ -26,6 +26,26 @@
             'http://localhost:8080/export.js');document.body.appendChild(jsCode);}());"
                 >scrape orders</a
             >
+            - this will:
+            <ol>
+                <li>
+                    open a new window for each order, read some info, close them
+                </li>
+                <li>upload that data here</li>
+                <li>
+                    display a quick status of each order:
+
+                    <dl>
+                        <dt>👶</dt>
+                        <dd>new order inserted</dd>
+                        <dt>👷</dt>
+                        <dd>existing order updated</dd>
+                        <dt>🧟</dt>
+                        <dd>error</dd>
+                    </dl>
+                </li>
+                <li>go to the next page of the order history</li>
+            </ol>
         </li>
         <li>
             Open your
@@ -35,7 +55,10 @@
                 >Amazon Order History</a
             >
         </li>
-        <li>keep running the bookmarklet until you've imported all orders</li>
+        <li>
+            keep running the bookmarklet until you've imported all orders, or
+            when you see all 👷 in the status popup.
+        </li>
     </ol>
 </div>
 
