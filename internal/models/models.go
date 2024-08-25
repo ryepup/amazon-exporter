@@ -58,3 +58,8 @@ type Budget struct {
 	Name         string
 	LastModified time.Time
 }
+
+type TransactionUpdate struct {
+	Payee      string
+	CategoryID CategoryID
+}

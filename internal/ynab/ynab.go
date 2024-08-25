@@ -107,21 +107,21 @@ func (y *YNAB) Categories(ctx context.Context, budgetID models.BudgetID) (map[st
 	return y.categories[budgetID], nil
 }
 
-func (y *YNAB) Approve(ctx context.Context, budgetID models.BudgetID, items map[models.TransactionID]models.CategoryID) error {
+func (y *YNAB) Approve(ctx context.Context, budgetID models.BudgetID, items map[models.TransactionID]models.TransactionUpdate) error {
 	if len(items) == 0 {
 		return nil
 	}
 	updates := UpdateTransactionsJSONRequestBody{}
-	for ti, ci := range items {
-		ci, err := uuid.Parse(ci.String())
+	for ti, update := range items {
+		ci, err := uuid.Parse(update.CategoryID.String())
 		if err != nil {
 			return err
 		}
 		updates.Transactions = append(updates.Transactions, SaveTransactionWithIdOrImportId{
 			Id:         ptr(ti.String()),
 			Approved:   ptr(true),
-			CategoryId: ptr(ci),
-			PayeeName:  ptr("Amazon"),
+			CategoryId: &ci,
+			PayeeName:  &update.Payee,
 		})
 	}
 

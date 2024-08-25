@@ -29,7 +29,7 @@ type Repo interface {
 type YNAB interface {
 	Unapproved(context.Context, models.BudgetID) ([]models.UnapprovedTransaction, error)
 	Categories(context.Context, models.BudgetID) (map[string][]models.Category, error)
-	Approve(context.Context, models.BudgetID, map[models.TransactionID]models.CategoryID) error
+	Approve(context.Context, models.BudgetID, map[models.TransactionID]models.TransactionUpdate) error
 	Budgets(ctx context.Context) ([]models.Budget, error)
 }
 
@@ -140,13 +140,16 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		updates := make(map[models.TransactionID]models.CategoryID)
+		updates := make(map[models.TransactionID]models.TransactionUpdate)
 		for idx, cID := range r.PostForm["categoryID"] {
 			if cID == "-1" {
 				continue
 			}
 			tID := r.PostForm["transactionID"][idx]
-			updates[models.TransactionID(tID)] = models.CategoryID(cID)
+			updates[models.TransactionID(tID)] = models.TransactionUpdate{
+				CategoryID: models.CategoryID(cID),
+				Payee:      r.PostForm["payee"][idx],
+			}
 		}
 
 		if err := u.ynabRepo.Approve(r.Context(), budgetID, updates); err != nil {

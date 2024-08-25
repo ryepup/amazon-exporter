@@ -45,20 +45,47 @@
             <input type="hidden" name="transactionID" value="{{.ID}}" />
             <tr title="{{.ID}}">
                 <td>{{ template "date.html" .Date }}</td>
-                <td>{{ .Payee }}</td>
+                <td>
+                    <div class="field has-addons">
+                        <div class="control is-expanded">
+                            <input
+                                class="input is-small"
+                                type="text"
+                                name="payee"
+                                value="{{ .Payee }}"
+                            />
+                        </div>
+                        <div class="control">
+                            <button
+                                title="rename to 'Amazon'"
+                                class="button is-small"
+                                type="button"
+                                onclick="this.parentElement.previousElementSibling.children[0].value='Amazon'"
+                            >
+                                <img
+                                    src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAsTAAALEwEAmpwYAAABfklEQVR4nO3UP0hWYRTH8Q8kSiA0pFND4eqWNSgYNEoUiBQEEpFEg1BBRpD9IyKKkAiiSWgQbKghcCtodosCxQiCwqAoEQoSLX3jwhkuD/ea73vd8sCBe88Pzvc5zznn4X+wLoxjBotYxgc8Dq2S3cAqaiX+G6caTX68IOEC/iSxJexqBPA6l+QHDka8PdEyH2oE8BIf487vJtrZBHDdJtvJBHC7SrLdGMFTvMH3gt40BNiGe1hZZ4oqAR4kSeZwJmb/QlVAR8x4LfwT2nL6UFVA2sRHiX450cfqBVxKEkzmtGa8TfRX9QIGC7Z1MO7/eUmjj9QD2BnbWyvxbPk+J7Fr/0rakvwPxMnT5PPxbOzDT6xFT7bjKC7iWBEgW6ZR7MjF9uAcHuI+TqA1p+/Hofg+gMMB+VZWRR/e4wn6E9h6lffGAbL3a29sfallpZ6PO14L4LMY1Vu4gjuYwDR+4R2G0YTT6NzoU9GDm3gRo/kFXzGLKVxFd0FFW2bD9hdAOZqivuyNfQAAAABJRU5ErkJggg=="
+                                />
+                            </button>
+                        </div>
+                    </div>
+                </td>
                 <td>{{ template "amount.html" .Amount }}</td>
                 <td>
-                    <div class="select">
-                        <select name="categoryID">
-                            <option value="-1">-- ignore --</option>
-                            {{ range $key, $value := $categories }}
-                            <optgroup label="{{ $key }}">
-                                {{ range $value }}
-                                <option value="{{ .ID }}">{{ .Name }}</option>
+                    <div class="control">
+                        <div class="select is-small">
+                            <select name="categoryID">
+                                <option value="-1">-- ignore --</option>
+                                {{ range $key, $value := $categories }}
+                                <optgroup label="{{ $key }}">
+                                    {{ range $value }}
+                                    <option value="{{ .ID }}">
+                                        {{ .Name }}
+                                    </option>
+                                    {{ end }}
+                                </optgroup>
                                 {{ end }}
-                            </optgroup>
-                            {{ end }}
-                        </select>
+                            </select>
+                        </div>
                     </div>
                 </td>
             </tr>
