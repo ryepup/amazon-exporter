@@ -48,7 +48,7 @@ func New(cfg Config) (*YNAB, error) {
 
 func (y *YNAB) Unapproved(ctx context.Context, budgetID models.BudgetID) (ret []models.UnapprovedTransaction, err error) {
 	res, err := y.client.GetTransactionsWithResponse(ctx, budgetID.String(), &GetTransactionsParams{
-		Type: ptr(GetTransactionsParamsTypeUnapproved),
+		Type: ptr(Unapproved),
 	})
 	if err != nil {
 		return nil, err

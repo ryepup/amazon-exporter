@@ -175,6 +175,12 @@ const (
 	GetTransactionsByCategoryParamsTypeUncategorized GetTransactionsByCategoryParamsType = "uncategorized"
 )
 
+// Defines values for GetTransactionsByMonthParamsType.
+const (
+	GetTransactionsByMonthParamsTypeUnapproved    GetTransactionsByMonthParamsType = "unapproved"
+	GetTransactionsByMonthParamsTypeUncategorized GetTransactionsByMonthParamsType = "uncategorized"
+)
+
 // Defines values for GetTransactionsByPayeeParamsType.
 const (
 	GetTransactionsByPayeeParamsTypeUnapproved    GetTransactionsByPayeeParamsType = "unapproved"
@@ -183,8 +189,8 @@ const (
 
 // Defines values for GetTransactionsParamsType.
 const (
-	GetTransactionsParamsTypeUnapproved    GetTransactionsParamsType = "unapproved"
-	GetTransactionsParamsTypeUncategorized GetTransactionsParamsType = "uncategorized"
+	Unapproved    GetTransactionsParamsType = "unapproved"
+	Uncategorized GetTransactionsParamsType = "uncategorized"
 )
 
 // Account defines model for Account.
@@ -848,7 +854,7 @@ type SaveScheduledTransaction struct {
 	// CategoryId The category for the scheduled transaction. Credit Card Payment categories are not permitted. Creating a split scheduled transaction is not currently supported.
 	CategoryId *openapi_types.UUID `json:"category_id"`
 
-	// Date The scheduled transaction date in ISO format (e.g. 2016-12-01).
+	// Date The scheduled transaction date in ISO format (e.g. 2016-12-01).  This should be a future date no more than 5 years into the future.
 	Date openapi_types.Date `json:"date"`
 
 	// FlagColor The transaction flag
@@ -1327,6 +1333,21 @@ type GetBudgetMonthsParams struct {
 	LastKnowledgeOfServer *int64 `form:"last_knowledge_of_server,omitempty" json:"last_knowledge_of_server,omitempty"`
 }
 
+// GetTransactionsByMonthParams defines parameters for GetTransactionsByMonth.
+type GetTransactionsByMonthParams struct {
+	// SinceDate If specified, only transactions on or after this date will be included.  The date should be ISO formatted (e.g. 2016-12-30).
+	SinceDate *openapi_types.Date `form:"since_date,omitempty" json:"since_date,omitempty"`
+
+	// Type If specified, only transactions of the specified type will be included. "uncategorized" and "unapproved" are currently supported.
+	Type *GetTransactionsByMonthParamsType `form:"type,omitempty" json:"type,omitempty"`
+
+	// LastKnowledgeOfServer The starting server knowledge.  If provided, only entities that have changed since `last_knowledge_of_server` will be included.
+	LastKnowledgeOfServer *int64 `form:"last_knowledge_of_server,omitempty" json:"last_knowledge_of_server,omitempty"`
+}
+
+// GetTransactionsByMonthParamsType defines parameters for GetTransactionsByMonth.
+type GetTransactionsByMonthParamsType string
+
 // GetPayeesParams defines parameters for GetPayees.
 type GetPayeesParams struct {
 	// LastKnowledgeOfServer The starting server knowledge.  If provided, only entities that have changed since `last_knowledge_of_server` will be included.
@@ -1514,6 +1535,9 @@ type ClientInterface interface {
 
 	UpdateMonthCategory(ctx context.Context, budgetId string, month openapi_types.Date, categoryId string, body UpdateMonthCategoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetTransactionsByMonth request
+	GetTransactionsByMonth(ctx context.Context, budgetId string, month string, params *GetTransactionsByMonthParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetPayeeLocations request
 	GetPayeeLocations(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1540,13 +1564,13 @@ type ClientInterface interface {
 	// GetScheduledTransactions request
 	GetScheduledTransactions(ctx context.Context, budgetId string, params *GetScheduledTransactionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateScheduledTransactionWithBody request with any body
+	CreateScheduledTransactionWithBody(ctx context.Context, budgetId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateScheduledTransaction(ctx context.Context, budgetId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetScheduledTransactionById request
 	GetScheduledTransactionById(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateScheduledTransactionWithBody request with any body
-	CreateScheduledTransactionWithBody(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	CreateScheduledTransaction(ctx context.Context, budgetId string, scheduledTransactionId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetBudgetSettingsById request
 	GetBudgetSettingsById(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1786,6 +1810,18 @@ func (c *Client) UpdateMonthCategory(ctx context.Context, budgetId string, month
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetTransactionsByMonth(ctx context.Context, budgetId string, month string, params *GetTransactionsByMonthParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTransactionsByMonthRequest(c.Server, budgetId, month, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetPayeeLocations(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPayeeLocationsRequest(c.Server, budgetId)
 	if err != nil {
@@ -1894,32 +1930,32 @@ func (c *Client) GetScheduledTransactions(ctx context.Context, budgetId string, 
 	return c.Client.Do(req)
 }
 
+func (c *Client) CreateScheduledTransactionWithBody(ctx context.Context, budgetId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScheduledTransactionRequestWithBody(c.Server, budgetId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateScheduledTransaction(ctx context.Context, budgetId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScheduledTransactionRequest(c.Server, budgetId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetScheduledTransactionById(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetScheduledTransactionByIdRequest(c.Server, budgetId, scheduledTransactionId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateScheduledTransactionWithBody(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateScheduledTransactionRequestWithBody(c.Server, budgetId, scheduledTransactionId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CreateScheduledTransaction(ctx context.Context, budgetId string, scheduledTransactionId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateScheduledTransactionRequest(c.Server, budgetId, scheduledTransactionId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2870,6 +2906,101 @@ func NewUpdateMonthCategoryRequestWithBody(server string, budgetId string, month
 	return req, nil
 }
 
+// NewGetTransactionsByMonthRequest generates requests for GetTransactionsByMonth
+func NewGetTransactionsByMonthRequest(server string, budgetId string, month string, params *GetTransactionsByMonthParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "budget_id", runtime.ParamLocationPath, budgetId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "month", runtime.ParamLocationPath, month)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/budgets/%s/months/%s/transactions", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.SinceDate != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "since_date", runtime.ParamLocationQuery, *params.SinceDate); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "type", runtime.ParamLocationQuery, *params.Type); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.LastKnowledgeOfServer != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "last_knowledge_of_server", runtime.ParamLocationQuery, *params.LastKnowledgeOfServer); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetPayeeLocationsRequest generates requests for GetPayeeLocations
 func NewGetPayeeLocationsRequest(server string, budgetId string) (*http.Request, error) {
 	var err error
@@ -3288,6 +3419,53 @@ func NewGetScheduledTransactionsRequest(server string, budgetId string, params *
 	return req, nil
 }
 
+// NewCreateScheduledTransactionRequest calls the generic CreateScheduledTransaction builder with application/json body
+func NewCreateScheduledTransactionRequest(server string, budgetId string, body CreateScheduledTransactionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateScheduledTransactionRequestWithBody(server, budgetId, "application/json", bodyReader)
+}
+
+// NewCreateScheduledTransactionRequestWithBody generates requests for CreateScheduledTransaction with any type of body
+func NewCreateScheduledTransactionRequestWithBody(server string, budgetId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "budget_id", runtime.ParamLocationPath, budgetId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/budgets/%s/scheduled_transactions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetScheduledTransactionByIdRequest generates requests for GetScheduledTransactionById
 func NewGetScheduledTransactionByIdRequest(server string, budgetId string, scheduledTransactionId string) (*http.Request, error) {
 	var err error
@@ -3325,60 +3503,6 @@ func NewGetScheduledTransactionByIdRequest(server string, budgetId string, sched
 	if err != nil {
 		return nil, err
 	}
-
-	return req, nil
-}
-
-// NewCreateScheduledTransactionRequest calls the generic CreateScheduledTransaction builder with application/json body
-func NewCreateScheduledTransactionRequest(server string, budgetId string, scheduledTransactionId string, body CreateScheduledTransactionJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateScheduledTransactionRequestWithBody(server, budgetId, scheduledTransactionId, "application/json", bodyReader)
-}
-
-// NewCreateScheduledTransactionRequestWithBody generates requests for CreateScheduledTransaction with any type of body
-func NewCreateScheduledTransactionRequestWithBody(server string, budgetId string, scheduledTransactionId string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "budget_id", runtime.ParamLocationPath, budgetId)
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "scheduled_transaction_id", runtime.ParamLocationPath, scheduledTransactionId)
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/budgets/%s/scheduled_transactions/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3887,6 +4011,9 @@ type ClientWithResponsesInterface interface {
 
 	UpdateMonthCategoryWithResponse(ctx context.Context, budgetId string, month openapi_types.Date, categoryId string, body UpdateMonthCategoryJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMonthCategoryResponse, error)
 
+	// GetTransactionsByMonthWithResponse request
+	GetTransactionsByMonthWithResponse(ctx context.Context, budgetId string, month string, params *GetTransactionsByMonthParams, reqEditors ...RequestEditorFn) (*GetTransactionsByMonthResponse, error)
+
 	// GetPayeeLocationsWithResponse request
 	GetPayeeLocationsWithResponse(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*GetPayeeLocationsResponse, error)
 
@@ -3913,13 +4040,13 @@ type ClientWithResponsesInterface interface {
 	// GetScheduledTransactionsWithResponse request
 	GetScheduledTransactionsWithResponse(ctx context.Context, budgetId string, params *GetScheduledTransactionsParams, reqEditors ...RequestEditorFn) (*GetScheduledTransactionsResponse, error)
 
+	// CreateScheduledTransactionWithBodyWithResponse request with any body
+	CreateScheduledTransactionWithBodyWithResponse(ctx context.Context, budgetId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error)
+
+	CreateScheduledTransactionWithResponse(ctx context.Context, budgetId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error)
+
 	// GetScheduledTransactionByIdWithResponse request
 	GetScheduledTransactionByIdWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*GetScheduledTransactionByIdResponse, error)
-
-	// CreateScheduledTransactionWithBodyWithResponse request with any body
-	CreateScheduledTransactionWithBodyWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error)
-
-	CreateScheduledTransactionWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error)
 
 	// GetBudgetSettingsByIdWithResponse request
 	GetBudgetSettingsByIdWithResponse(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*GetBudgetSettingsByIdResponse, error)
@@ -4288,6 +4415,30 @@ func (r UpdateMonthCategoryResponse) StatusCode() int {
 	return 0
 }
 
+type GetTransactionsByMonthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HybridTransactionsResponse
+	JSON404      *ErrorResponse
+	JSONDefault  *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTransactionsByMonthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTransactionsByMonthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetPayeeLocationsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4479,6 +4630,29 @@ func (r GetScheduledTransactionsResponse) StatusCode() int {
 	return 0
 }
 
+type CreateScheduledTransactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *ScheduledTransactionResponse
+	JSON400      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateScheduledTransactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateScheduledTransactionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetScheduledTransactionByIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4497,29 +4671,6 @@ func (r GetScheduledTransactionByIdResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetScheduledTransactionByIdResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CreateScheduledTransactionResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON201      *ScheduledTransactionResponse
-	JSON400      *ErrorResponse
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateScheduledTransactionResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateScheduledTransactionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -4888,6 +5039,15 @@ func (c *ClientWithResponses) UpdateMonthCategoryWithResponse(ctx context.Contex
 	return ParseUpdateMonthCategoryResponse(rsp)
 }
 
+// GetTransactionsByMonthWithResponse request returning *GetTransactionsByMonthResponse
+func (c *ClientWithResponses) GetTransactionsByMonthWithResponse(ctx context.Context, budgetId string, month string, params *GetTransactionsByMonthParams, reqEditors ...RequestEditorFn) (*GetTransactionsByMonthResponse, error) {
+	rsp, err := c.GetTransactionsByMonth(ctx, budgetId, month, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTransactionsByMonthResponse(rsp)
+}
+
 // GetPayeeLocationsWithResponse request returning *GetPayeeLocationsResponse
 func (c *ClientWithResponses) GetPayeeLocationsWithResponse(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*GetPayeeLocationsResponse, error) {
 	rsp, err := c.GetPayeeLocations(ctx, budgetId, reqEditors...)
@@ -4968,6 +5128,23 @@ func (c *ClientWithResponses) GetScheduledTransactionsWithResponse(ctx context.C
 	return ParseGetScheduledTransactionsResponse(rsp)
 }
 
+// CreateScheduledTransactionWithBodyWithResponse request with arbitrary body returning *CreateScheduledTransactionResponse
+func (c *ClientWithResponses) CreateScheduledTransactionWithBodyWithResponse(ctx context.Context, budgetId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error) {
+	rsp, err := c.CreateScheduledTransactionWithBody(ctx, budgetId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScheduledTransactionResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateScheduledTransactionWithResponse(ctx context.Context, budgetId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error) {
+	rsp, err := c.CreateScheduledTransaction(ctx, budgetId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScheduledTransactionResponse(rsp)
+}
+
 // GetScheduledTransactionByIdWithResponse request returning *GetScheduledTransactionByIdResponse
 func (c *ClientWithResponses) GetScheduledTransactionByIdWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*GetScheduledTransactionByIdResponse, error) {
 	rsp, err := c.GetScheduledTransactionById(ctx, budgetId, scheduledTransactionId, reqEditors...)
@@ -4975,23 +5152,6 @@ func (c *ClientWithResponses) GetScheduledTransactionByIdWithResponse(ctx contex
 		return nil, err
 	}
 	return ParseGetScheduledTransactionByIdResponse(rsp)
-}
-
-// CreateScheduledTransactionWithBodyWithResponse request with arbitrary body returning *CreateScheduledTransactionResponse
-func (c *ClientWithResponses) CreateScheduledTransactionWithBodyWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error) {
-	rsp, err := c.CreateScheduledTransactionWithBody(ctx, budgetId, scheduledTransactionId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateScheduledTransactionResponse(rsp)
-}
-
-func (c *ClientWithResponses) CreateScheduledTransactionWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error) {
-	rsp, err := c.CreateScheduledTransaction(ctx, budgetId, scheduledTransactionId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateScheduledTransactionResponse(rsp)
 }
 
 // GetBudgetSettingsByIdWithResponse request returning *GetBudgetSettingsByIdResponse
@@ -5638,6 +5798,46 @@ func ParseUpdateMonthCategoryResponse(rsp *http.Response) (*UpdateMonthCategoryR
 	return response, nil
 }
 
+// ParseGetTransactionsByMonthResponse parses an HTTP response from a GetTransactionsByMonthWithResponse call
+func ParseGetTransactionsByMonthResponse(rsp *http.Response) (*GetTransactionsByMonthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTransactionsByMonthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HybridTransactionsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetPayeeLocationsResponse parses an HTTP response from a GetPayeeLocationsWithResponse call
 func ParseGetPayeeLocationsResponse(rsp *http.Response) (*GetPayeeLocationsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5951,6 +6151,39 @@ func ParseGetScheduledTransactionsResponse(rsp *http.Response) (*GetScheduledTra
 	return response, nil
 }
 
+// ParseCreateScheduledTransactionResponse parses an HTTP response from a CreateScheduledTransactionWithResponse call
+func ParseCreateScheduledTransactionResponse(rsp *http.Response) (*CreateScheduledTransactionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateScheduledTransactionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ScheduledTransactionResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetScheduledTransactionByIdResponse parses an HTTP response from a GetScheduledTransactionByIdWithResponse call
 func ParseGetScheduledTransactionByIdResponse(rsp *http.Response) (*GetScheduledTransactionByIdResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5985,39 +6218,6 @@ func ParseGetScheduledTransactionByIdResponse(rsp *http.Response) (*GetScheduled
 			return nil, err
 		}
 		response.JSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCreateScheduledTransactionResponse parses an HTTP response from a CreateScheduledTransactionWithResponse call
-func ParseCreateScheduledTransactionResponse(rsp *http.Response) (*CreateScheduledTransactionResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CreateScheduledTransactionResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest ScheduledTransactionResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
 
 	}
 
