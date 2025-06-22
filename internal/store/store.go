@@ -279,3 +279,32 @@ func (s *Store) rowsToOrders(rows *sql.Rows) ([]models.Order, error) {
 	})
 	return orders, nil
 }
+
+// SetPurchaseCategory sets the categories for multiple purchases in bulk.
+func (s *Store) RecordCategories(ctx context.Context, updates map[models.TransactionID]models.TransactionUpdate) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO purchase_category 
+			(purchase_id, category_id, category_name) 
+		VALUES (?, ?, ?) 
+		ON CONFLICT(purchase_id) DO UPDATE SET 
+			category_id=excluded.category_id, 
+			category_name=excluded.category_name
+		`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for tid, update := range updates {
+		if _, err := stmt.ExecContext(ctx, string(tid), update.CategoryID.String(), update.CategoryName); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

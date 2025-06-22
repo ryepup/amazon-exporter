@@ -60,6 +60,7 @@ type Budget struct {
 }
 
 type TransactionUpdate struct {
-	Payee      string
-	CategoryID CategoryID
+	Payee        string
+	CategoryID   CategoryID
+	CategoryName string
 }

@@ -24,6 +24,7 @@ var (
 
 type Repo interface {
 	Search(context.Context, string) ([]models.Order, error)
+	RecordCategories(context.Context, map[models.TransactionID]models.TransactionUpdate) error
 }
 
 type YNAB interface {
@@ -135,10 +136,23 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cats, err := u.ynabRepo.Categories(r.Context(), budgetID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		idToName := make(map[models.CategoryID]string)
+		for _, group := range cats {
+			for _, cat := range group {
+				idToName[cat.ID] = cat.Name
+			}
 		}
 		updates := make(map[models.TransactionID]models.TransactionUpdate)
 		for idx, cID := range r.PostForm["categoryID"] {
@@ -147,8 +161,9 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 			}
 			tID := r.PostForm["transactionID"][idx]
 			updates[models.TransactionID(tID)] = models.TransactionUpdate{
-				CategoryID: models.CategoryID(cID),
-				Payee:      r.PostForm["payee"][idx],
+				CategoryID:   models.CategoryID(cID),
+				Payee:        r.PostForm["payee"][idx],
+				CategoryName: idToName[models.CategoryID(cID)],
 			}
 		}
 
@@ -157,15 +172,14 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if err := u.repo.RecordCategories(r.Context(), updates); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		r.URL.RawQuery = url.Values{"budgetID": []string{budgetID.String()}}.Encode()
 
 		http.Redirect(w, r, r.URL.String(), http.StatusFound)
-		return
-	}
-
-	cats, err := u.ynabRepo.Categories(r.Context(), budgetID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
