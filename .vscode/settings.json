@@ -1,0 +1,10 @@
+{
+  "cSpell.enabledFileTypes": {
+    "go": false,
+    "go.mod": false,
+    "dockerfile": false,
+    "makefile": false
+  },
+  "editor.formatOnSave": true,
+  "go.testFlags": ["-v"]
+}
