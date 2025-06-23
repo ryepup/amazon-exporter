@@ -36,7 +36,7 @@ type YNAB interface {
 
 type UI struct {
 	staticServer http.Handler
-	templates    template.Template
+	templates    *template.Template
 	repo         Repo
 	ynabRepo     YNAB
 }
@@ -54,7 +54,7 @@ func New(repo Repo, y YNAB) (*UI, error) {
 
 	return &UI{
 		staticServer: http.FileServer(http.FS(staticFS)),
-		templates:    *tmpl,
+		templates:    tmpl,
 		repo:         repo,
 		ynabRepo:     y,
 	}, nil
