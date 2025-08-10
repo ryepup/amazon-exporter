@@ -142,6 +142,7 @@ const (
 // Defines values for TransactionFlagColor.
 const (
 	TransactionFlagColorBlue   TransactionFlagColor = "blue"
+	TransactionFlagColorEmpty  TransactionFlagColor = ""
 	TransactionFlagColorGreen  TransactionFlagColor = "green"
 	TransactionFlagColorNil    TransactionFlagColor = "<nil>"
 	TransactionFlagColorOrange TransactionFlagColor = "orange"
@@ -207,7 +208,7 @@ type Account struct {
 	DebtInterestRates   *LoanAccountPeriodicValue `json:"debt_interest_rates"`
 	DebtMinimumPayments *LoanAccountPeriodicValue `json:"debt_minimum_payments"`
 
-	// DebtOriginalBalance The original debt/loan account balance, specified in milliunits format.
+	// DebtOriginalBalance This field is deprecated and will always be null.
 	DebtOriginalBalance *int64 `json:"debt_original_balance"`
 
 	// Deleted Whether or not the account has been deleted.  Deleted accounts will only be included in delta requests.
@@ -398,6 +399,9 @@ type Category struct {
 
 	// GoalPercentageComplete The percentage completion of the goal
 	GoalPercentageComplete *int32 `json:"goal_percentage_complete"`
+
+	// GoalSnoozedAt The date/time the goal was snoozed.  If the goal is not snoozed, this will be null.
+	GoalSnoozedAt *time.Time `json:"goal_snoozed_at"`
 
 	// GoalTarget The goal target amount in milliunits
 	GoalTarget *int64 `json:"goal_target"`
@@ -788,6 +792,11 @@ type PostTransactionsWrapper struct {
 	Transactions *[]NewTransaction `json:"transactions,omitempty"`
 }
 
+// PutScheduledTransactionWrapper defines model for PutScheduledTransactionWrapper.
+type PutScheduledTransactionWrapper struct {
+	ScheduledTransaction SaveScheduledTransaction `json:"scheduled_transaction"`
+}
+
 // PutTransactionWrapper defines model for PutTransactionWrapper.
 type PutTransactionWrapper struct {
 	Transaction ExistingTransaction `json:"transaction"`
@@ -808,8 +817,11 @@ type SaveAccount struct {
 // SaveCategory defines model for SaveCategory.
 type SaveCategory struct {
 	CategoryGroupId *openapi_types.UUID `json:"category_group_id,omitempty"`
-	Name            *string             `json:"name"`
-	Note            *string             `json:"note"`
+
+	// GoalTarget The goal target amount in milliunits format.  This amount can only be changed if the category already has a configured goal (goal_type != null).
+	GoalTarget *int64  `json:"goal_target"`
+	Name       *string `json:"name"`
+	Note       *string `json:"note"`
 }
 
 // SaveCategoryResponse defines model for SaveCategoryResponse.
@@ -980,14 +992,16 @@ type SaveTransactionsResponse struct {
 // ScheduledSubTransaction defines model for ScheduledSubTransaction.
 type ScheduledSubTransaction struct {
 	// Amount The scheduled subtransaction amount in milliunits format
-	Amount     int64               `json:"amount"`
-	CategoryId *openapi_types.UUID `json:"category_id"`
+	Amount       int64               `json:"amount"`
+	CategoryId   *openapi_types.UUID `json:"category_id"`
+	CategoryName *string             `json:"category_name"`
 
 	// Deleted Whether or not the scheduled subtransaction has been deleted. Deleted scheduled subtransactions will only be included in delta requests.
 	Deleted                bool                `json:"deleted"`
 	Id                     openapi_types.UUID  `json:"id"`
 	Memo                   *string             `json:"memo"`
 	PayeeId                *openapi_types.UUID `json:"payee_id"`
+	PayeeName              *string             `json:"payee_name"`
 	ScheduledTransactionId openapi_types.UUID  `json:"scheduled_transaction_id"`
 
 	// TransferAccountId If a transfer, the account_id which the scheduled subtransaction transfers to
@@ -1186,7 +1200,9 @@ type TransactionFlagName = string
 // TransactionResponse defines model for TransactionResponse.
 type TransactionResponse struct {
 	Data struct {
-		Transaction TransactionDetail `json:"transaction"`
+		// ServerKnowledge The knowledge of the server
+		ServerKnowledge int64             `json:"server_knowledge"`
+		Transaction     TransactionDetail `json:"transaction"`
 	} `json:"data"`
 }
 
@@ -1405,6 +1421,9 @@ type UpdatePayeeJSONRequestBody = PatchPayeeWrapper
 // CreateScheduledTransactionJSONRequestBody defines body for CreateScheduledTransaction for application/json ContentType.
 type CreateScheduledTransactionJSONRequestBody = PostScheduledTransactionWrapper
 
+// UpdateScheduledTransactionJSONRequestBody defines body for UpdateScheduledTransaction for application/json ContentType.
+type UpdateScheduledTransactionJSONRequestBody = PutScheduledTransactionWrapper
+
 // UpdateTransactionsJSONRequestBody defines body for UpdateTransactions for application/json ContentType.
 type UpdateTransactionsJSONRequestBody = PatchTransactionsWrapper
 
@@ -1569,8 +1588,16 @@ type ClientInterface interface {
 
 	CreateScheduledTransaction(ctx context.Context, budgetId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DeleteScheduledTransaction request
+	DeleteScheduledTransaction(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetScheduledTransactionById request
 	GetScheduledTransactionById(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateScheduledTransactionWithBody request with any body
+	UpdateScheduledTransactionWithBody(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateScheduledTransaction(ctx context.Context, budgetId string, scheduledTransactionId string, body UpdateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetBudgetSettingsById request
 	GetBudgetSettingsById(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1954,8 +1981,44 @@ func (c *Client) CreateScheduledTransaction(ctx context.Context, budgetId string
 	return c.Client.Do(req)
 }
 
+func (c *Client) DeleteScheduledTransaction(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteScheduledTransactionRequest(c.Server, budgetId, scheduledTransactionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetScheduledTransactionById(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetScheduledTransactionByIdRequest(c.Server, budgetId, scheduledTransactionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateScheduledTransactionWithBody(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScheduledTransactionRequestWithBody(c.Server, budgetId, scheduledTransactionId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateScheduledTransaction(ctx context.Context, budgetId string, scheduledTransactionId string, body UpdateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateScheduledTransactionRequest(c.Server, budgetId, scheduledTransactionId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3466,6 +3529,47 @@ func NewCreateScheduledTransactionRequestWithBody(server string, budgetId string
 	return req, nil
 }
 
+// NewDeleteScheduledTransactionRequest generates requests for DeleteScheduledTransaction
+func NewDeleteScheduledTransactionRequest(server string, budgetId string, scheduledTransactionId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "budget_id", runtime.ParamLocationPath, budgetId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "scheduled_transaction_id", runtime.ParamLocationPath, scheduledTransactionId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/budgets/%s/scheduled_transactions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetScheduledTransactionByIdRequest generates requests for GetScheduledTransactionById
 func NewGetScheduledTransactionByIdRequest(server string, budgetId string, scheduledTransactionId string) (*http.Request, error) {
 	var err error
@@ -3503,6 +3607,60 @@ func NewGetScheduledTransactionByIdRequest(server string, budgetId string, sched
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewUpdateScheduledTransactionRequest calls the generic UpdateScheduledTransaction builder with application/json body
+func NewUpdateScheduledTransactionRequest(server string, budgetId string, scheduledTransactionId string, body UpdateScheduledTransactionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateScheduledTransactionRequestWithBody(server, budgetId, scheduledTransactionId, "application/json", bodyReader)
+}
+
+// NewUpdateScheduledTransactionRequestWithBody generates requests for UpdateScheduledTransaction with any type of body
+func NewUpdateScheduledTransactionRequestWithBody(server string, budgetId string, scheduledTransactionId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "budget_id", runtime.ParamLocationPath, budgetId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "scheduled_transaction_id", runtime.ParamLocationPath, scheduledTransactionId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/budgets/%s/scheduled_transactions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -4045,8 +4203,16 @@ type ClientWithResponsesInterface interface {
 
 	CreateScheduledTransactionWithResponse(ctx context.Context, budgetId string, body CreateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScheduledTransactionResponse, error)
 
+	// DeleteScheduledTransactionWithResponse request
+	DeleteScheduledTransactionWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*DeleteScheduledTransactionResponse, error)
+
 	// GetScheduledTransactionByIdWithResponse request
 	GetScheduledTransactionByIdWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*GetScheduledTransactionByIdResponse, error)
+
+	// UpdateScheduledTransactionWithBodyWithResponse request with any body
+	UpdateScheduledTransactionWithBodyWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScheduledTransactionResponse, error)
+
+	UpdateScheduledTransactionWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, body UpdateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScheduledTransactionResponse, error)
 
 	// GetBudgetSettingsByIdWithResponse request
 	GetBudgetSettingsByIdWithResponse(ctx context.Context, budgetId string, reqEditors ...RequestEditorFn) (*GetBudgetSettingsByIdResponse, error)
@@ -4418,7 +4584,7 @@ func (r UpdateMonthCategoryResponse) StatusCode() int {
 type GetTransactionsByMonthResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *HybridTransactionsResponse
+	JSON200      *TransactionsResponse
 	JSON404      *ErrorResponse
 	JSONDefault  *ErrorResponse
 }
@@ -4653,6 +4819,29 @@ func (r CreateScheduledTransactionResponse) StatusCode() int {
 	return 0
 }
 
+type DeleteScheduledTransactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ScheduledTransactionResponse
+	JSON404      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteScheduledTransactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteScheduledTransactionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetScheduledTransactionByIdResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4671,6 +4860,29 @@ func (r GetScheduledTransactionByIdResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetScheduledTransactionByIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateScheduledTransactionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ScheduledTransactionResponse
+	JSON400      *ErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateScheduledTransactionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateScheduledTransactionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5145,6 +5357,15 @@ func (c *ClientWithResponses) CreateScheduledTransactionWithResponse(ctx context
 	return ParseCreateScheduledTransactionResponse(rsp)
 }
 
+// DeleteScheduledTransactionWithResponse request returning *DeleteScheduledTransactionResponse
+func (c *ClientWithResponses) DeleteScheduledTransactionWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*DeleteScheduledTransactionResponse, error) {
+	rsp, err := c.DeleteScheduledTransaction(ctx, budgetId, scheduledTransactionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteScheduledTransactionResponse(rsp)
+}
+
 // GetScheduledTransactionByIdWithResponse request returning *GetScheduledTransactionByIdResponse
 func (c *ClientWithResponses) GetScheduledTransactionByIdWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, reqEditors ...RequestEditorFn) (*GetScheduledTransactionByIdResponse, error) {
 	rsp, err := c.GetScheduledTransactionById(ctx, budgetId, scheduledTransactionId, reqEditors...)
@@ -5152,6 +5373,23 @@ func (c *ClientWithResponses) GetScheduledTransactionByIdWithResponse(ctx contex
 		return nil, err
 	}
 	return ParseGetScheduledTransactionByIdResponse(rsp)
+}
+
+// UpdateScheduledTransactionWithBodyWithResponse request with arbitrary body returning *UpdateScheduledTransactionResponse
+func (c *ClientWithResponses) UpdateScheduledTransactionWithBodyWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScheduledTransactionResponse, error) {
+	rsp, err := c.UpdateScheduledTransactionWithBody(ctx, budgetId, scheduledTransactionId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScheduledTransactionResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateScheduledTransactionWithResponse(ctx context.Context, budgetId string, scheduledTransactionId string, body UpdateScheduledTransactionJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateScheduledTransactionResponse, error) {
+	rsp, err := c.UpdateScheduledTransaction(ctx, budgetId, scheduledTransactionId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateScheduledTransactionResponse(rsp)
 }
 
 // GetBudgetSettingsByIdWithResponse request returning *GetBudgetSettingsByIdResponse
@@ -5813,7 +6051,7 @@ func ParseGetTransactionsByMonthResponse(rsp *http.Response) (*GetTransactionsBy
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest HybridTransactionsResponse
+		var dest TransactionsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -6184,6 +6422,39 @@ func ParseCreateScheduledTransactionResponse(rsp *http.Response) (*CreateSchedul
 	return response, nil
 }
 
+// ParseDeleteScheduledTransactionResponse parses an HTTP response from a DeleteScheduledTransactionWithResponse call
+func ParseDeleteScheduledTransactionResponse(rsp *http.Response) (*DeleteScheduledTransactionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteScheduledTransactionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduledTransactionResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetScheduledTransactionByIdResponse parses an HTTP response from a GetScheduledTransactionByIdWithResponse call
 func ParseGetScheduledTransactionByIdResponse(rsp *http.Response) (*GetScheduledTransactionByIdResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6218,6 +6489,39 @@ func ParseGetScheduledTransactionByIdResponse(rsp *http.Response) (*GetScheduled
 			return nil, err
 		}
 		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateScheduledTransactionResponse parses an HTTP response from a UpdateScheduledTransactionWithResponse call
+func ParseUpdateScheduledTransactionResponse(rsp *http.Response) (*UpdateScheduledTransactionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateScheduledTransactionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScheduledTransactionResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	}
 
