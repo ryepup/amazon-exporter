@@ -89,10 +89,21 @@
 
   const scrapeDigitalInvoice = (doc) => {
     const price = parseFloat(
-      doc.querySelector(".a-color-price").innerText.replace("$", "")
+      (
+        doc.querySelector(".a-color-price") ||
+        [
+          ...doc.querySelectorAll(
+            '[data-component="chargeSummary"] .a-span-last'
+          ),
+        ].pop()
+      ).innerText.replace("$", "")
     );
 
-    const items = [doc.querySelector('td[valign="top"]').innerText.trim()];
+    const items = [
+      doc
+        .querySelector('td[valign="top"] b a,[data-component="itemTitle"]')
+        .innerText.trim(),
+    ];
 
     return { items, price };
   };
