@@ -11,7 +11,7 @@ import (
 	"github.com/ryepup/amazon-exporter/internal/models"
 )
 
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=config.yaml https://api.ynab.com/papi/open_api_spec.yaml
+//go:generate go tool oapi-codegen --config=config.yaml https://api.ynab.com/papi/open_api_spec.yaml
 
 func WithAuthorization(token string) ClientOption {
 	return WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
