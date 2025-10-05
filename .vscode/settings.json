@@ -6,5 +6,7 @@
     "makefile": false
   },
   "editor.formatOnSave": true,
-  "go.testFlags": ["-v"]
+  "go.testFlags": ["-v"],
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true
 }
