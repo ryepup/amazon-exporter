@@ -1,0 +1,64 @@
+<div class="columns">
+    <div class="column is-8 is-offset-2">
+        <div class="box">
+            <h2 class="title is-4">Discover to YNAB Converter</h2>
+            <p class="content">
+                Upload a CSV file downloaded from Discover to convert it to YNAB format.
+                The converted file will be automatically downloaded and ready for import into YNAB.
+            </p>
+
+            <form method="post" enctype="multipart/form-data">
+                <div class="field">
+                    <label class="label" for="discover_file">Select Discover CSV File</label>
+                    <div class="control">
+                        <div class="file has-name is-fullwidth">
+                            <label class="file-label">
+                                <input class="file-input" type="file" name="discover_file" id="discover_file" accept=".csv" required>
+                                <span class="file-cta">
+                                    <span class="file-icon">
+                                        📁
+                                    </span>
+                                    <span class="file-label">
+                                        Choose a file…
+                                    </span>
+                                </span>
+                                <span class="file-name" id="file-name">
+                                    No file selected
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    <p class="help">Upload the CSV file you downloaded from your Discover account.</p>
+                </div>
+
+                <div class="field">
+                    <div class="control">
+                        <button class="button is-primary is-fullwidth" type="submit">
+                            <span class="icon">
+                                🔄
+                            </span>
+                            <span>Convert to YNAB Format</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            <div class="notification is-info is-light">
+                <p><strong>How to use:</strong></p>
+                <ol>
+                    <li>Download your transactions from Discover's website as a CSV file</li>
+                    <li>Upload the file using the form above</li>
+                    <li>The converted file will download automatically</li>
+                    <li>Import the converted file into YNAB</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('discover_file').addEventListener('change', function(e) {
+        const fileName = e.target.files[0]?.name || 'No file selected';
+        document.getElementById('file-name').textContent = fileName;
+    });
+</script>

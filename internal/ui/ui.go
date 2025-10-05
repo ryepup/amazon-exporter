@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ryepup/amazon-exporter/internal/models"
+	discover "github.com/ryepup/ynab-discover"
 )
 
 var (
@@ -68,6 +69,8 @@ func (u *UI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		u.index(w, r)
 	case "/ynab":
 		u.ynab(w, r)
+	case "/discover":
+		u.discover(w, r)
 	default:
 		u.staticServer.ServeHTTP(w, r)
 	}
@@ -230,6 +233,37 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 		templateData.Transactions = append(templateData.Transactions, u)
 	}
 	u.renderPage(w, "ynab.html", templateData)
+}
+
+func (u *UI) discover(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		// Handle file upload and conversion
+		if err := r.ParseMultipartForm(10 << 20); err != nil { // 10MB max
+			http.Error(w, "Failed to parse form: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		file, header, err := r.FormFile("discover_file")
+		if err != nil {
+			http.Error(w, "Failed to get file: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		// Convert using discover library and stream directly to response
+		filename := "ynab_" + header.Filename
+		w.Header().Set("Content-Type", "text/csv")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+
+		if err := discover.ConvertCSV(r.Context(), file, w); err != nil {
+			log.Printf("Failed to convert CSV: %v", err)
+			http.Error(w, "Failed to convert CSV: "+err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// GET request - show the upload form
+	u.renderPage(w, "discover.html", nil)
 }
 
 func (u *UI) renderPage(w http.ResponseWriter, page string, templateData any) {
