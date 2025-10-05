@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Environment variable: `YNAB_TOKEN` - YNAB Personal Access Token for API integration
 
 ### Building
-- `go build -o app` - Build the Go binary
+- `make build` - Build the Go binary
 - `docker-compose up --build` - Build and run with Docker
 
 ### Code Generation
