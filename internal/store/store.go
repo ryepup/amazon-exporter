@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"slices"
 	"strconv"
 
@@ -152,6 +153,7 @@ func (s *Store) Load(id string) (models.Order, error) {
 
 // loadByPriceOrAmount retrieves orders from the database where either the price or the amount matches the given value.
 func (s *Store) loadByPriceOrAmount(ctx context.Context, value float64) ([]models.Order, error) {
+	value = math.Abs(value)
 	log.Printf("loadByPriceOrAmount(%v)", value)
 	// Query to fetch orders based on price or amount
 	query := `
@@ -168,8 +170,8 @@ func (s *Store) loadByPriceOrAmount(ctx context.Context, value float64) ([]model
             LEFT JOIN purchase_items pi ON p.id = pi.purchase_id
             LEFT JOIN items i ON pi.item_id = i.id
         WHERE
-            p.price BETWEEN (?-0.001) AND (?+0.001) 
-			OR p.amount BETWEEN (?-0.001) AND (?+0.001)
+			ABS(p.price) BETWEEN (?-0.001) AND (?+0.001)
+			OR ABS(p.amount) BETWEEN (?-0.001) AND (?+0.001)
     `
 
 	// Execute the query
@@ -289,11 +291,11 @@ func (s *Store) RecordCategories(ctx context.Context, updates map[models.Transac
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO purchase_category 
-			(purchase_id, category_id, category_name) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT(purchase_id) DO UPDATE SET 
-			category_id=excluded.category_id, 
+		INSERT INTO purchase_category
+			(purchase_id, category_id, category_name)
+		VALUES (?, ?, ?)
+		ON CONFLICT(purchase_id) DO UPDATE SET
+			category_id=excluded.category_id,
 			category_name=excluded.category_name
 		`)
 	if err != nil {
