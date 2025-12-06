@@ -1,0 +1,3 @@
+# Treat minified files as binary to prevent diff/merge attempts
+*.min.js binary
+*.min.css binary
