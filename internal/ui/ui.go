@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/ryepup/amazon-exporter/internal/models"
@@ -17,10 +18,8 @@ import (
 )
 
 var (
-	//go:embed static
-	static embed.FS
-	//go:embed templates/*
-	templateFS embed.FS
+	//go:embed static templates
+	uiFS embed.FS
 )
 
 type Repo interface {
@@ -36,29 +35,59 @@ type YNAB interface {
 }
 
 type UI struct {
-	staticServer http.Handler
-	templates    *template.Template
-	repo         Repo
-	ynabRepo     YNAB
+	staticServer    http.Handler
+	templates       *template.Template
+	repo            Repo
+	ynabRepo        YNAB
+	uiFS            fs.FS
+	reloadTemplates bool
 }
 
-func New(repo Repo, y YNAB) (*UI, error) {
-	staticFS, err := fs.Sub(static, "static")
+type Option func(*UI)
+
+// WithUIPath will use the given path to read static files and templates instead
+// of the embedded versions compiled into the program. Useful for development.
+func WithUIPath(uiPath string) Option {
+	return func(u *UI) {
+		if uiPath != "" {
+			u.reloadTemplates = true
+			u.uiFS = os.DirFS(uiPath)
+		}
+	}
+}
+
+func New(repo Repo, y YNAB, opts ...Option) (*UI, error) {
+	ui := &UI{
+		repo:     repo,
+		ynabRepo: y,
+		uiFS:     uiFS,
+	}
+
+	for _, opt := range opts {
+		opt(ui)
+	}
+
+	staticFS, err := fs.Sub(ui.uiFS, "static")
 	if err != nil {
 		return nil, fmt.Errorf("failed to make static subtree: %w", err)
 	}
+	ui.staticServer = http.FileServer(http.FS(staticFS))
 
-	tmpl, err := template.ParseFS(templateFS, "templates/*.html")
-	if err != nil {
-		log.Fatal(err)
+	if err := ui.loadTemplates(); err != nil {
+		return nil, err
 	}
 
-	return &UI{
-		staticServer: http.FileServer(http.FS(staticFS)),
-		templates:    tmpl,
-		repo:         repo,
-		ynabRepo:     y,
-	}, nil
+	return ui, nil
+}
+
+func (u *UI) loadTemplates() error {
+	tmpl, err := template.ParseFS(u.uiFS, "templates/*.html")
+	if err != nil {
+		return fmt.Errorf("failed to load templates: %w", err)
+	}
+
+	u.templates = tmpl
+	return nil
 }
 
 func (u *UI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -267,6 +296,13 @@ func (u *UI) discover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (u *UI) renderPage(w http.ResponseWriter, page string, templateData any) {
+	if u.reloadTemplates {
+		if err := u.loadTemplates(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	p, err := u.templates.Clone()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
