@@ -3,21 +3,38 @@
         <div class="box">
             <h2 class="title is-4">Discover to YNAB Converter</h2>
             <p class="content">
-                Upload a CSV file downloaded from Discover to convert it to YNAB format.
-                The converted file will be automatically downloaded and ready for import into YNAB.
+                Upload a CSV file downloaded from Discover to convert it to YNAB
+                format. The converted file will be automatically downloaded and
+                ready for import into YNAB.
             </p>
 
-            <form method="post" enctype="multipart/form-data">
+            <form method="post" enctype="multipart/form-data" id="upload-form">
                 <div class="field">
-                    <label class="label" for="discover_file">Select Discover CSV File</label>
+                    <label class="label" for="discover_file"
+                        >Select Discover CSV File</label
+                    >
                     <div class="control">
-                        <div class="file has-name is-fullwidth">
-                            <label class="file-label">
-                                <input class="file-input" type="file" name="discover_file" id="discover_file" accept=".csv" required>
+                        <div
+                            class="file has-name is-fullwidth"
+                            id="drop-zone"
+                            style="
+                                border: 2px dashed transparent;
+                                transition: all 0.3s;
+                                padding: 1rem;
+                                border-radius: 4px;
+                            "
+                        >
+                            <label class="file-label" style="width: 100%">
+                                <input
+                                    class="file-input"
+                                    type="file"
+                                    name="discover_file"
+                                    id="discover_file"
+                                    accept=".csv"
+                                    required
+                                />
                                 <span class="file-cta">
-                                    <span class="file-icon">
-                                        📁
-                                    </span>
+                                    <span class="file-icon"> 📁 </span>
                                     <span class="file-label">
                                         Choose a file…
                                     </span>
@@ -28,15 +45,19 @@
                             </label>
                         </div>
                     </div>
-                    <p class="help">Upload the CSV file you downloaded from your Discover account.</p>
+                    <p class="help">
+                        Upload the CSV file you downloaded from your Discover
+                        account. You can also drag and drop the file here.
+                    </p>
                 </div>
 
                 <div class="field">
                     <div class="control">
-                        <button class="button is-primary is-fullwidth" type="submit">
-                            <span class="icon">
-                                🔄
-                            </span>
+                        <button
+                            class="button is-primary is-fullwidth"
+                            type="submit"
+                        >
+                            <span class="icon"> 🔄 </span>
                             <span>Convert to YNAB Format</span>
                         </button>
                     </div>
@@ -46,7 +67,21 @@
             <div class="notification is-info is-light">
                 <p><strong>How to use:</strong></p>
                 <ol>
-                    <li>Download your transactions from Discover's website as a CSV file</li>
+                    <li>
+                        <a href="https://www.discover.com/" target="_blank"
+                            >Login to Discover</a
+                        >
+                    </li>
+                    <li>
+                        Download your transactions from Discover's website as a
+                        CSV file
+                        <br />
+                        <a
+                            href="https://card.discover.com/cardmembersvcs/statements/app/stmt.download?date=all&sortColumn=trans_date&grouping=-1&printView=false&sortOrder=Y&transaction=-1&printOption=transactions&way=actvt&includePend=Y&outputFormat=csv"
+                            >Direct a CSV of the last 12 months</a
+                        >
+                        (assuming Discover hasn't changed their URLs)
+                    </li>
                     <li>Upload the file using the form above</li>
                     <li>The converted file will download automatically</li>
                     <li>Import the converted file into YNAB</li>
@@ -57,8 +92,76 @@
 </div>
 
 <script>
-    document.getElementById('discover_file').addEventListener('change', function(e) {
-        const fileName = e.target.files[0]?.name || 'No file selected';
-        document.getElementById('file-name').textContent = fileName;
+    const fileInput = document.getElementById("discover_file");
+    const dropZone = document.getElementById("drop-zone");
+    const fileNameDisplay = document.getElementById("file-name");
+
+    // Update file name display when file is selected
+    fileInput.addEventListener("change", function (e) {
+        const fileName = e.target.files[0]?.name || "No file selected";
+        fileNameDisplay.textContent = fileName;
     });
+
+    // Prevent default drag behaviors
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    // Highlight drop zone when item is dragged over it
+    ["dragenter", "dragover"].forEach((eventName) => {
+        dropZone.addEventListener(eventName, highlight, false);
+    });
+
+    ["dragleave", "drop"].forEach((eventName) => {
+        dropZone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+        dropZone.style.borderColor = "#3273dc";
+        dropZone.style.backgroundColor = "#f5f5f5";
+    }
+
+    function unhighlight(e) {
+        dropZone.style.borderColor = "transparent";
+        dropZone.style.backgroundColor = "transparent";
+    }
+
+    // Handle dropped files
+    dropZone.addEventListener("drop", handleDrop, false);
+
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+
+        if (files.length === 0) {
+            alert("No file was dropped.");
+            return;
+        }
+
+        if (files.length > 1) {
+            alert("Please drop only one file at a time.");
+            return;
+        }
+
+        const file = files[0];
+        // Check if it's a CSV file
+        if (!file.name.endsWith(".csv")) {
+            alert("Please drop a CSV file.");
+            return;
+        }
+
+        // Create a new DataTransfer to set files on the input
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+
+        // Update the file name display
+        fileNameDisplay.textContent = file.name;
+    }
 </script>
