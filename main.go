@@ -19,6 +19,7 @@ var (
 	dbFileFlag = flag.String("dbfile", "example.db", "SQLite database file")
 	ynabToken  = flag.String("ynab-token", os.Getenv("YNAB_TOKEN"), "YNAB access token, can specify with YNAB_TOKEN")
 	ynabServer = flag.String("ynab-server", "https://api.ynab.com/v1/", "YNAB api server")
+	uiPath     = flag.String("ui-path", "", "Path to UI directory for dynamic template reloading")
 )
 
 func main() {
@@ -40,7 +41,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	u, err := ui.New(repo, ynabRepo)
+	u, err := ui.New(repo, ynabRepo, ui.WithUIPath(*uiPath))
 	if err != nil {
 		log.Fatal(err)
 	}
