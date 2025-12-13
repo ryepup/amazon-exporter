@@ -238,7 +238,6 @@ func (u *UI) ynab(w http.ResponseWriter, r *http.Request) {
 		BudgetID:     budgetID,
 	}
 	for _, ut := range trans {
-		ut := ut
 		orders, err := u.repo.Search(r.Context(), fmt.Sprintf("%.2f", math.Abs(ut.Amount)))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

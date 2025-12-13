@@ -312,32 +312,3 @@ func (s *Store) RecordCategories(ctx context.Context, updates map[models.Transac
 	}
 	return tx.Commit()
 }
-
-func (s *Store) OldPCs(ctx context.Context) (rv []models.TransactionID, err error) {
-	query := `
-		SELECT purchase_id FROM purchase_category
-		LEFT JOIN transactions ON transactions.id = purchase_category.purchase_id
-		WHERE transactions.id IS NULL
-		--LIMIT 10
-	`
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var tid string
-		if err := rows.Scan(&tid); err != nil {
-			return nil, err
-		}
-		rv = append(rv, models.TransactionID(tid))
-	}
-	// Check for errors from iterating over rows
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return rv, nil
-
-}
