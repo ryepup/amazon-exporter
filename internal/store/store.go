@@ -291,10 +291,11 @@ func (s *Store) RecordCategories(ctx context.Context, updates map[models.Transac
 	defer tx.Rollback()
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO purchase_category
-			(purchase_id, category_id, category_name)
-		VALUES (?, ?, ?)
-		ON CONFLICT(purchase_id) DO UPDATE SET
+		INSERT INTO transactions
+			(id, payee, category_id, category_name)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			payee=excluded.payee,
 			category_id=excluded.category_id,
 			category_name=excluded.category_name
 		`)
@@ -304,9 +305,39 @@ func (s *Store) RecordCategories(ctx context.Context, updates map[models.Transac
 	defer stmt.Close()
 
 	for tid, update := range updates {
-		if _, err := stmt.ExecContext(ctx, string(tid), update.CategoryID.String(), update.CategoryName); err != nil {
+		_, err := stmt.ExecContext(ctx, tid, update.Payee, update.CategoryID, update.CategoryName)
+		if err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+func (s *Store) OldPCs(ctx context.Context) (rv []models.TransactionID, err error) {
+	query := `
+		SELECT purchase_id FROM purchase_category
+		LEFT JOIN transactions ON transactions.id = purchase_category.purchase_id
+		WHERE transactions.id IS NULL
+		--LIMIT 10
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tid string
+		if err := rows.Scan(&tid); err != nil {
+			return nil, err
+		}
+		rv = append(rv, models.TransactionID(tid))
+	}
+	// Check for errors from iterating over rows
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return rv, nil
+
 }

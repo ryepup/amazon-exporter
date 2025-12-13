@@ -61,7 +61,22 @@ func initDatabase(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	_, err = db.Exec("PRAGMA journal_mode = WAL")
+	// Create transactions table if not exists
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS transactions (
+			id TEXT PRIMARY KEY, -- ynab transaction ID
+			payee TEXT,
+			category_id TEXT, -- ynab category ID
+			category_name TEXT
+		)`)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = db.Exec(`
+		PRAGMA journal_mode = WAL;
+		-- PRAGMA foreign_keys = ON;
+	`)
 	if err != nil {
 		return nil, err
 	}
