@@ -6,9 +6,11 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ryepup/amazon-exporter/internal/models"
+	"golang.org/x/time/rate"
 )
 
 //go:generate go tool oapi-codegen --config=config.yaml https://api.ynab.com/papi/open_api_spec.yaml
@@ -26,28 +28,29 @@ type Config struct {
 }
 
 type YNAB struct {
-	client     *ClientWithResponses
+	Client     *ClientWithResponses
 	categories map[models.BudgetID]map[string][]models.Category // cache the categories
 	budgets    []models.Budget                                  // cache the budgets
 }
 
 func New(cfg Config) (*YNAB, error) {
-	c, err := NewClientWithResponses(cfg.Server, WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", cfg.Token))
-		log.Printf("ynab %s %s", req.Method, req.URL)
-		return nil
-	}))
+	// ynab API limits to 200/hr
+	l := rate.NewLimiter(rate.Every(200/time.Hour), 0)
+	c, err := NewClientWithResponses(cfg.Server, WithAuthorization(cfg.Token),
+		WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
+			return l.Wait(ctx)
+		}))
 	if err != nil {
 		return nil, err
 	}
 
 	return &YNAB{
-		client: c,
+		Client: c,
 	}, nil
 }
 
 func (y *YNAB) Unapproved(ctx context.Context, budgetID models.BudgetID) (ret []models.UnapprovedTransaction, err error) {
-	res, err := y.client.GetTransactionsWithResponse(ctx, budgetID.String(), &GetTransactionsParams{
+	res, err := y.Client.GetTransactionsWithResponse(ctx, budgetID.String(), &GetTransactionsParams{
 		Type: ptr(Unapproved),
 	})
 	if err != nil {
@@ -62,7 +65,7 @@ func (y *YNAB) Unapproved(ctx context.Context, budgetID models.BudgetID) (ret []
 			ID:     models.TransactionID(td.Id),
 			Amount: float64(td.Amount) / 1000,
 			Date:   td.Date.Time,
-			Payee:  first(td.ImportPayeeName, td.ImportPayeeNameOriginal, td.PayeeName),
+			Payee:  first(td.PayeeName, td.ImportPayeeName),
 		})
 	}
 	return ret, nil
@@ -72,7 +75,7 @@ func (y *YNAB) Categories(ctx context.Context, budgetID models.BudgetID) (map[st
 	if y.categories != nil && y.categories[budgetID] != nil {
 		return y.categories[budgetID], nil
 	}
-	res, err := y.client.GetCategoriesWithResponse(ctx, budgetID.String(), nil)
+	res, err := y.Client.GetCategoriesWithResponse(ctx, budgetID.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +128,7 @@ func (y *YNAB) Approve(ctx context.Context, budgetID models.BudgetID, items map[
 		})
 	}
 
-	res, err := y.client.UpdateTransactionsWithResponse(ctx, budgetID.String(), updates)
+	res, err := y.Client.UpdateTransactionsWithResponse(ctx, budgetID.String(), updates)
 	if err != nil {
 		return err
 	}
@@ -141,7 +144,7 @@ func (y *YNAB) Budgets(ctx context.Context) ([]models.Budget, error) {
 		return y.budgets, nil
 	}
 
-	res, err := y.client.GetBudgetsWithResponse(ctx, &GetBudgetsParams{})
+	res, err := y.Client.GetBudgetsWithResponse(ctx, &GetBudgetsParams{})
 	if err != nil {
 		return nil, err
 	}

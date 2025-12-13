@@ -5,15 +5,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Running the Application
+
 - `make serve` - Builds and runs the application using Docker Compose on port 8080
 - Direct Go execution: `go run . -port 8080 -dbfile data/purchases.db`
 - Environment variable: `YNAB_TOKEN` - YNAB Personal Access Token for API integration
 
 ### Building
+
 - `make build` - Build the Go binary
 - `docker-compose up --build` - Build and run with Docker
 
 ### Code Generation
+
 - `go generate ./...` - Regenerates YNAB API client from OpenAPI spec
 - Located in `internal/ynab/`: uses oapi-codegen to generate client from https://api.ynab.com/papi/open_api_spec.yaml
 
@@ -24,30 +27,35 @@ This is a Go web application that scrapes Amazon purchase data and integrates wi
 ### Core Components
 
 **Main Application (`main.go`)**
+
 - HTTP server with two main routes:
   - `/api/*` - REST API endpoints (handled by `internal/api`)
   - `/` - Web UI (handled by `internal/ui`)
 - Command-line flags for port, database file, and YNAB configuration
 
 **Data Layer (`internal/store/`)**
+
 - SQLite database interaction with transactions support
 - `Store` struct handles purchase data persistence
 - Search functionality by price, amount, card, item, or date
 - Bulk category updates for YNAB integration
 
 **Models (`internal/models/`)**
+
 - `Order` - Amazon purchase with items, price, and charge details
 - `Charge` - Payment card transaction with amount and date
 - `UnapprovedTransaction`, `Category`, `Budget` - YNAB-specific types
 - Date parsing and comparison utilities
 
 **YNAB Integration (`internal/ynab/`)**
+
 - Generated API client using oapi-codegen
 - Handles authentication via Bearer tokens
 - Functions for retrieving unapproved transactions, categories, budgets
 - Transaction approval and categorization
 
 **Web UI (`internal/ui/`)**
+
 - Embedded static assets and HTML templates
 - Template-driven interface for purchase data display
 - Integration with YNAB for transaction matching
@@ -63,6 +71,7 @@ This is a Go web application that scrapes Amazon purchase data and integrates wi
 ### Database Schema
 
 The application uses SQLite with these main tables:
+
 - `purchases` - Order details with card and amount information
 - `items` - Individual purchase items
 - `purchase_items` - Junction table linking purchases to items

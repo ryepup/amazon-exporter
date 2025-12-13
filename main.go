@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"time"
 
 	"github.com/ryepup/amazon-exporter/internal/api"
+	"github.com/ryepup/amazon-exporter/internal/fixme"
 	"github.com/ryepup/amazon-exporter/internal/store"
 	"github.com/ryepup/amazon-exporter/internal/ui"
 	"github.com/ryepup/amazon-exporter/internal/ynab"
@@ -23,8 +27,17 @@ var (
 )
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
 	// Parse command-line flags
 	flag.Parse()
+
+	// Default to serve command if no subcommand provided
+	command := "serve"
+	args := flag.Args()
+	if len(args) > 0 {
+		command = args[0]
+	}
 
 	// Initialize the database
 	repo, err := store.Open(*dbFileFlag)
@@ -40,7 +53,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	switch command {
+	case "serve":
+		serve(ctx, repo, ynabRepo)
+	case "fixme":
+		if err := fixme.Run(ctx, repo, ynabRepo); err != nil {
+			log.Fatal(err)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+		fmt.Fprintf(os.Stderr, "Available commands: serve, fixme\n")
+		os.Exit(1)
+	}
+}
 
+func serve(ctx context.Context, repo *store.Store, ynabRepo *ynab.YNAB) {
 	u, err := ui.New(repo, ynabRepo, ui.WithUIPath(*uiPath))
 	if err != nil {
 		log.Fatal(err)
@@ -52,8 +79,13 @@ func main() {
 
 	// Start the server
 	addr := fmt.Sprintf(":%d", *portFlag)
+	s := http.Server{Addr: addr, Handler: withLog(mux)}
+	context.AfterFunc(ctx, func() {
+		cctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		s.Shutdown(cctx)
+	})
 	log.Printf("Server is listening on %s...", addr)
-	log.Fatal(http.ListenAndServe(addr, withLog(mux)))
+	log.Fatal(s.ListenAndServe())
 }
 
 func withLog(next http.Handler) http.Handler {
