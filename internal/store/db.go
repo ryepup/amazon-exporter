@@ -49,18 +49,6 @@ func initDatabase(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Create purchase_category table if not exists
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS purchase_category (
-			purchase_id TEXT PRIMARY KEY,
-			category_id TEXT,
-			category_name TEXT,
-			FOREIGN KEY(purchase_id) REFERENCES purchases(id)
-		)`)
-	if err != nil {
-		return nil, err
-	}
-
 	// Create transactions table if not exists
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS transactions (
@@ -75,7 +63,7 @@ func initDatabase(path string) (*sql.DB, error) {
 
 	_, err = db.Exec(`
 		PRAGMA journal_mode = WAL;
-		-- PRAGMA foreign_keys = ON;
+		PRAGMA foreign_keys = ON;
 	`)
 	if err != nil {
 		return nil, err
